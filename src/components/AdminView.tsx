@@ -351,6 +351,16 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   const [newApptModal, setNewApptModal] = useState(false);
   const [calendarView, setCalendarView] = useState<'week' | 'day'>('week');
 
+  const [clientSearchText, setClientSearchText] = useState('');
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+
+  useEffect(() => {
+    if (!newDocModal) {
+      setClientSearchText('');
+      setShowClientSuggestions(false);
+    }
+  }, [newDocModal]);
+
   const getMonday = (d: Date) => {
     const date = new Date(d);
     const day = date.getDay();
@@ -584,9 +594,17 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       return;
     }
     try {
-      await apiService.createOrUpdateClient(newClientForm);
+      const created = await apiService.createOrUpdateClient(newClientForm);
       onToast(`Client ${newClientForm.first_name} ${newClientForm.last_name} enregistré avec succès !`, "success");
       setNewClientModal(false);
+      
+      // Auto-select the newly created client in document builder if modal is open
+      if (newDocModal) {
+        setNewDocForm(prev => ({ ...prev, client_id: created.id }));
+        setClientSearchText(`${created.last_name.toUpperCase()} ${created.first_name}`);
+        setDocInterventionAddress('');
+      }
+
       setNewClientForm({
         first_name: '',
         last_name: '',
@@ -5479,146 +5497,156 @@ export default {
               <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-100 space-y-3">
                 <div className="flex justify-between items-center pb-2 border-b border-gray-100">
                   <span className="text-xs font-bold text-slate-800">Assignation Client CRM</span>
-                  <button 
-                    type="button" 
-                    onClick={() => setOnTheFlyClient({ ...onTheFlyClient, enabled: !onTheFlyClient.enabled })}
-                    className="text-[11px] font-bold text-sky-500 hover:text-sky-600 transition-colors"
-                  >
-                    {onTheFlyClient.enabled ? "Choisir client existant ➔" : "+ Créer nouveau client à la volée"}
-                  </button>
                 </div>
 
-                {!onTheFlyClient.enabled ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">SÉLECTIONNER UN CLIENT CRM *</span>
-                        <select 
-                          value={newDocForm.client_id}
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1 relative">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">RECHERCHER UN CLIENT CRM *</span>
+                      <div className="relative">
+                        <input 
+                          type="text"
+                          placeholder="Commencez à taper un nom ou prénom..."
+                          value={clientSearchText}
                           onChange={e => {
-                            setNewDocForm({ ...newDocForm, client_id: e.target.value });
-                            setDocInterventionAddress('');
+                            setClientSearchText(e.target.value);
+                            if (newDocForm.client_id) {
+                              setNewDocForm({ ...newDocForm, client_id: '' });
+                              setDocInterventionAddress('');
+                            }
+                            setShowClientSuggestions(true);
                           }}
-                          required={!onTheFlyClient.enabled}
-                          className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
-                        >
-                          <option value="">-- Choisissez un client --</option>
-                          {clients.map(c => (
-                            <option key={c.id} value={c.id}>{c.last_name.toUpperCase()} {c.first_name} ({c.phone})</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">TYPE DE DOCUMENT</span>
-                        <select 
-                          value={newDocForm.type}
-                          onChange={e => setNewDocForm({ ...newDocForm, type: e.target.value as DocumentType })}
-                          className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
-                        >
-                          <option value="devis">Devis</option>
-                          <option value="facture">Facture</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {newDocForm.client_id && allAddresses.filter(addr => addr.client_id === newDocForm.client_id).length > 0 && (
-                      <div className="space-y-1 animate-in slide-in-from-top-1 duration-100">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">ADRESSE DE CHANTIER / INTERVENTION</span>
-                        <select 
-                          value={docInterventionAddress}
-                          onChange={e => setDocInterventionAddress(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
-                        >
-                          <option value="">-- Utiliser l'adresse d'origine du compte client --</option>
-                          {allAddresses.filter(addr => addr.client_id === newDocForm.client_id).map(addr => (
-                            <option key={addr.id} value={addr.adresse_complete}>
-                              [{addr.label_adresse.toUpperCase()}] {addr.adresse_complete}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[9.5px] uppercase font-extrabold text-sky-500 tracking-wider">Création automatique de client dans D1</span>
-                      
-                      <div className="space-y-1">
-                        <select 
-                          value={newDocForm.type}
-                          onChange={e => setNewDocForm({ ...newDocForm, type: e.target.value as DocumentType })}
-                          className="bg-white border border-gray-100 text-[10px] font-bold px-2 py-1 rounded-lg outline-none"
-                        >
-                          <option value="devis">Type: Devis</option>
-                          <option value="facture">Type: Facture</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <span className="text-[9px] uppercase font-bold text-slate-400">Prénom *</span>
-                        <input 
-                          type="text" 
-                          placeholder="Jean" 
-                          value={onTheFlyClient.first_name}
-                          onChange={e => setOnTheFlyClient({ ...onTheFlyClient, first_name: e.target.value })}
-                          required={onTheFlyClient.enabled}
-                          className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
+                          onFocus={() => setShowClientSuggestions(true)}
+                          onBlur={() => setTimeout(() => setShowClientSuggestions(false), 250)}
+                          className="w-full bg-white border border-slate-200 text-xs p-2.5 rounded-xl outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500 transition-colors"
                         />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[9px] uppercase font-bold text-slate-400">Nom de famille *</span>
-                        <input 
-                          type="text" 
-                          placeholder="Dupont" 
-                          value={onTheFlyClient.last_name}
-                          onChange={e => setOnTheFlyClient({ ...onTheFlyClient, last_name: e.target.value })}
-                          required={onTheFlyClient.enabled}
-                          className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <span className="text-[9px] uppercase font-bold text-slate-400">Email *</span>
-                        <input 
-                          type="email" 
-                          placeholder="jean.dupont@gmail.com" 
-                          value={onTheFlyClient.email}
-                          onChange={e => setOnTheFlyClient({ ...onTheFlyClient, email: e.target.value })}
-                          required={onTheFlyClient.enabled}
-                          className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[9px] uppercase font-bold text-slate-400">Numéro de portable *</span>
-                        <input 
-                          type="text" 
-                          placeholder="0612345678" 
-                          value={onTheFlyClient.phone}
-                          onChange={e => setOnTheFlyClient({ ...onTheFlyClient, phone: e.target.value })}
-                          required={onTheFlyClient.enabled}
-                          className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
-                        />
+                        
+                        {showClientSuggestions && clientSearchText.trim().length > 0 && (
+                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-150 rounded-2xl shadow-xl z-50 max-h-[220px] overflow-y-auto p-1.5 space-y-1 animate-in fade-in slide-in-from-top-1 duration-100">
+                            {(() => {
+                              const query = clientSearchText.toLowerCase();
+                              const filtered = clients.filter(c => 
+                                c.first_name.toLowerCase().includes(query) || 
+                                c.last_name.toLowerCase().includes(query) ||
+                                (c.raison_sociale && c.raison_sociale.toLowerCase().includes(query))
+                              );
+                              
+                              if (filtered.length > 0) {
+                                return filtered.map(c => (
+                                  <div
+                                    key={c.id}
+                                    onMouseDown={() => {
+                                      setNewDocForm(prev => ({ ...prev, client_id: c.id }));
+                                      setClientSearchText(`${c.last_name.toUpperCase()} ${c.first_name}`);
+                                      setDocInterventionAddress('');
+                                      setShowClientSuggestions(false);
+                                    }}
+                                    className="p-2 hover:bg-slate-50 rounded-xl cursor-pointer text-xs flex justify-between items-center transition-colors"
+                                  >
+                                    <div>
+                                      <p className="font-extrabold text-slate-800">{c.last_name.toUpperCase()} {c.first_name}</p>
+                                      {c.raison_sociale && <p className="text-[9px] text-sky-600 font-bold">{c.raison_sociale}</p>}
+                                      <p className="text-[10px] text-slate-400">{c.phone} | {c.email}</p>
+                                    </div>
+                                    {newDocForm.client_id === c.id && (
+                                      <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+                                    )}
+                                  </div>
+                                ));
+                              } else {
+                                return (
+                                  <div className="p-3 text-center space-y-2 select-none">
+                                    <p className="text-xs text-slate-400 font-medium">❌ Client introuvable</p>
+                                    <button
+                                      type="button"
+                                      onMouseDown={() => {
+                                        const parts = clientSearchText.trim().split(/\s+/);
+                                        const firstName = parts.length > 1 ? parts[0] : '';
+                                        const lastName = parts.length > 1 ? parts.slice(1).join(' ') : parts[0] || '';
+                                        setNewClientForm({
+                                          first_name: firstName,
+                                          last_name: lastName,
+                                          email: '',
+                                          phone: '',
+                                          notes: '',
+                                          type_client: 'particulier',
+                                          raison_sociale: '',
+                                          siret: '',
+                                          tva_intracommunautaire: '',
+                                          adresse_complete: ''
+                                        });
+                                        setNewClientModal(true);
+                                        setShowClientSuggestions(false);
+                                      }}
+                                      className="text-xs font-bold text-sky-500 hover:text-sky-600 bg-sky-50 px-3 py-2 rounded-lg transition-colors cursor-pointer w-full text-center"
+                                    >
+                                      [ + Créer ce client à la volée ]
+                                    </button>
+                                  </div>
+                                );
+                              }
+                            })()}
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="space-y-1">
-                      <span className="text-[9px] uppercase font-bold text-slate-400">Spécificités textiles (Canapés/Tapis)</span>
-                      <input 
-                        type="text" 
-                        placeholder="Canapé velours beige, sensible à la chaleur..." 
-                        value={onTheFlyClient.notes}
-                        onChange={e => setOnTheFlyClient({ ...onTheFlyClient, notes: e.target.value })}
-                        className="w-full bg-white border border-gray-100 text-xs p-2.5 rounded-xl outline-none"
-                      />
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">TYPE DE DOCUMENT</span>
+                      <select 
+                        value={newDocForm.type}
+                        onChange={e => setNewDocForm({ ...newDocForm, type: e.target.value as DocumentType })}
+                        className="w-full bg-white border border-slate-200 text-xs p-2.5 rounded-xl outline-none focus:border-sky-500 transition-colors"
+                      >
+                        <option value="devis">Devis</option>
+                        <option value="facture">Facture</option>
+                      </select>
                     </div>
                   </div>
-                )}
+
+                  {newDocForm.client_id && (
+                    <div className="p-3 bg-sky-50/40 rounded-xl border border-sky-100 flex items-center justify-between text-xs animate-in fade-in duration-100">
+                      <div>
+                        <span className="text-[10px] uppercase font-black text-sky-600 block">Client sélectionné</span>
+                        <span className="font-extrabold text-slate-800">
+                          {(() => {
+                            const c = clients.find(x => x.id === newDocForm.client_id);
+                            return c ? `${c.last_name.toUpperCase()} ${c.first_name} (${c.phone})` : 'Client sélectionné';
+                          })()}
+                        </span>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setNewDocForm(prev => ({ ...prev, client_id: '' }));
+                          setClientSearchText('');
+                          setDocInterventionAddress('');
+                        }}
+                        className="text-[10px] font-bold text-red-500 hover:text-red-650 bg-red-50 px-2 py-1 rounded-md transition-colors"
+                      >
+                        Désélectionner
+                      </button>
+                    </div>
+                  )}
+
+                  {newDocForm.client_id && allAddresses.filter(addr => addr.client_id === newDocForm.client_id).length > 0 && (
+                    <div className="space-y-1 animate-in slide-in-from-top-1 duration-100">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">ADRESSE DE CHANTIER / INTERVENTION</span>
+                      <select 
+                        value={docInterventionAddress}
+                        onChange={e => setDocInterventionAddress(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                      >
+                        <option value="">-- Utiliser l'adresse d'origine du compte client --</option>
+                        {allAddresses.filter(addr => addr.client_id === newDocForm.client_id).map(addr => (
+                          <option key={addr.id} value={addr.adresse_complete}>
+                            [{addr.label_adresse.toUpperCase()}] {addr.adresse_complete}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
