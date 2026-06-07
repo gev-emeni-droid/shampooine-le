@@ -2888,11 +2888,11 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                 </button>
               </div>
 
-              {/* Grid layout with Sidebar */}
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {/* Calendrier plein écran */}
+              <div className="w-full">
                 
                 {/* Main Dynamic Calendar Time-Grid Container */}
-                <div className="lg:col-span-3 bg-white rounded-3xl border border-slate-150 shadow-sm overflow-hidden flex flex-col h-[75vh] min-h-[600px] lg:h-[800px]">
+                <div className="bg-white rounded-3xl border border-slate-150 shadow-sm overflow-hidden flex flex-col h-[75vh] min-h-[600px] lg:h-[800px]">
                   
                   {/* Sticky Grid Header Row */}
                   <div className="grid grid-cols-[70px_1fr] bg-slate-50 border-b border-slate-200 sticky top-0 z-20 shadow-sm overflow-hidden">
@@ -3083,65 +3083,6 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                   </div>
                 </div>
 
-                {/* Right sidebar: list instructions and unscheduled signed quotes */}
-                <div className="bg-white rounded-3xl border border-slate-150 p-6 shadow-sm space-y-5">
-                  <div>
-                    <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider mb-3">Chantiers Non Planifiés</h4>
-                    {signedUnscheduledQuotes.length === 0 ? (
-                      <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                        Aucun devis signé n'attend de planification.
-                      </p>
-                    ) : (
-                      <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-                        {signedUnscheduledQuotes.map(quote => {
-                          const cl = clients.find(c => c.id === quote.client_id);
-                          return (
-                            <div 
-                              key={quote.id}
-                              onClick={() => {
-                                handleQuoteSelectionForAppt(quote.id);
-                                setNewApptModal(true);
-                              }}
-                              className="p-3 bg-amber-50/45 hover:bg-amber-50 rounded-2xl border border-amber-100 cursor-pointer transition-all hover:scale-[1.02] flex flex-col gap-1 shadow-sm"
-                            >
-                              <div className="flex justify-between items-start gap-1">
-                                <span className="text-[10px] font-black text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-md">
-                                  {quote.number}
-                                </span>
-                                <span className="text-[10px] font-bold text-slate-900">
-                                  {quote.total_amount.toFixed(2)} €
-                                </span>
-                              </div>
-                              <p className="text-xs font-bold text-slate-850 truncate">
-                                {cl ? `${cl.first_name} ${cl.last_name}` : 'Client Inconnu'}
-                              </p>
-                              <p className="text-[9px] text-slate-400">
-                                Créé le {quote.date}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  <hr className="border-slate-100" />
-
-                  <div>
-                    <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider mb-2">Instructions</h4>
-                    <div className="text-xs text-slate-500 leading-relaxed space-y-3">
-                      <p>
-                        <strong>Étape 1 :</strong> Un devis client doit d'abord passer au statut <strong>"Signé/Accepté"</strong> dans le module Devis.
-                      </p>
-                      <p>
-                        <strong>Étape 2 :</strong> Cliquez sur un créneau ou sur <strong>"Planifier un Chantier"</strong> pour créer le rendez-vous.
-                      </p>
-                      <p>
-                        <strong>Étape 3 :</strong> Assignez des techniciens. La couleur de la carte correspondra au technicien principal assigné.
-                      </p>
-                    </div>
-                  </div>
-                </div>
 
               </div>
               
