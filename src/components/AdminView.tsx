@@ -3570,6 +3570,10 @@ export default {
                                 onToast("Modèle sauvegardé avec succès !", "success");
                                 const fresh = await apiService.getEmailConfigurations();
                                 setEmailConfigs(fresh);
+                                const matching = fresh.find(f => f.flux_type === editingConfig.flux_type);
+                                if (matching) {
+                                  setEditingConfig(matching);
+                                }
                               } catch (err) {
                                 console.error(err);
                                 onToast("Erreur lors de la sauvegarde.", "info");
