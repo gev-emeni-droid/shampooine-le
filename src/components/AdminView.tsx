@@ -29,6 +29,7 @@ import {
   Clock, 
   Check, 
   ChevronRight, 
+  ChevronLeft,
   ArrowLeftRight, 
   Database,
   Trash2, 
@@ -346,7 +347,131 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   });
 
   // Appointment Planner States
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(() => new Date());
   const [newApptModal, setNewApptModal] = useState(false);
+  const [calendarView, setCalendarView] = useState<'week' | 'day'>('week');
+
+  const getMonday = (d: Date) => {
+    const date = new Date(d);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(date.setDate(diff));
+  };
+
+  const getWeekNumber = (d: Date) => {
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNum = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+    const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+    return weekNo;
+  };
+
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+  };
+
+  const getHeaderTitle = () => {
+    if (calendarView === 'week') {
+      const mon = getMonday(selectedCalendarDate);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      
+      if (mon.getMonth() === sun.getMonth()) {
+        return `${mon.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} (Semaine ${getWeekNumber(mon)})`;
+      } else {
+        return `${mon.toLocaleDateString('fr-FR', { month: 'short' })} - ${sun.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })} (Semaine ${getWeekNumber(mon)})`;
+      }
+    } else {
+      return selectedCalendarDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    }
+  };
+
+  const handleToday = () => {
+    setSelectedCalendarDate(new Date());
+  };
+
+  const handlePrev = () => {
+    const nextDate = new Date(selectedCalendarDate);
+    if (calendarView === 'week') {
+      nextDate.setDate(nextDate.getDate() - 7);
+    } else {
+      nextDate.setDate(nextDate.getDate() - 1);
+    }
+    setSelectedCalendarDate(nextDate);
+  };
+
+  const handleNext = () => {
+    const nextDate = new Date(selectedCalendarDate);
+    if (calendarView === 'week') {
+      nextDate.setDate(nextDate.getDate() + 7);
+    } else {
+      nextDate.setDate(nextDate.getDate() + 1);
+    }
+    setSelectedCalendarDate(nextDate);
+  };
+
+  const handleDatePickerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) {
+      setSelectedCalendarDate(new Date(e.target.value));
+    }
+  };
+
+  const formatEndTime = (startTimeStr: string, durationMin: number) => {
+    const [h, m] = startTimeStr.split(':').map(Number);
+    const totalMin = h * 60 + m + durationMin;
+    const endH = Math.floor(totalMin / 60) % 24;
+    const endM = totalMin % 60;
+    return `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`;
+  };
+
+  const getStyledAppointmentsForDay = (dayDateStr: string, dayAppts: RendezVousPlanning[]) => {
+    const sorted = [...dayAppts].sort((a, b) => a.start_time.localeCompare(b.start_time));
+    const columns: RendezVousPlanning[][] = [];
+    
+    sorted.forEach(appt => {
+      let placed = false;
+      const [ah, am] = appt.start_time.split(':').map(Number);
+      const aStart = ah * 60 + am;
+      const aEnd = aStart + appt.duration_minutes;
+      
+      for (let c = 0; c < columns.length; c++) {
+        const hasOverlap = columns[c].some(other => {
+          const [oh, om] = other.start_time.split(':').map(Number);
+          const oStart = oh * 60 + om;
+          const oEnd = oStart + other.duration_minutes;
+          return (aStart < oEnd && aEnd > oStart);
+        });
+        
+        if (!hasOverlap) {
+          columns[c].push(appt);
+          placed = true;
+          break;
+        }
+      }
+      
+      if (!placed) {
+        columns.push([appt]);
+      }
+    });
+    
+    const apptStyles = new Map<string, { left: number; width: number }>();
+    const totalCols = columns.length;
+    
+    columns.forEach((col, colIndex) => {
+      col.forEach(appt => {
+        const width = 95 / totalCols;
+        const left = colIndex * (100 / totalCols);
+        apptStyles.set(appt.id, { left, width });
+      });
+    });
+    
+    return apptStyles;
+  };
+
   const [newApptForm, setNewApptForm] = useState({
     devis_facture_id: '',
     title: '',
@@ -398,6 +523,36 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   useEffect(() => {
     loadAllDbData();
   }, []);
+
+  // Load dynamic planning appointments when calendar date or tab changes
+  useEffect(() => {
+    async function loadPlanningEvents() {
+      const getMonday = (d: Date) => {
+        const date = new Date(d);
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        return new Date(date.setDate(diff));
+      };
+      
+      const mon = getMonday(selectedCalendarDate);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      
+      const startStr = mon.toISOString().split('T')[0];
+      const endStr = sun.toISOString().split('T')[0];
+      
+      try {
+        const res = await apiService.getAppointments(startStr, endStr);
+        setAppointments(res);
+      } catch (err) {
+        console.error("Error loading dynamic planning events", err);
+      }
+    }
+    
+    if (activeTab === 'planning') {
+      loadPlanningEvents();
+    }
+  }, [selectedCalendarDate, activeTab]);
 
   // CRM: Create Client
   const handleAddressSearch = async (query: string) => {
@@ -2527,14 +2682,83 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
           {activeTab === 'planning' && (
             <div className="space-y-6">
               
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              {/* Sleek Toolbar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 text-white p-5 rounded-3xl shadow-xl">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 bg-sky-500/10 rounded-xl">
+                    <CalendarIcon className="w-6 h-6 text-sky-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold tracking-tight">Planning de Livraison & Chantiers</h3>
+                    <p className="text-[10px] text-slate-400">Vue interactive Google Calendar (Time-Grid) temps réel</p>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Navigation buttons */}
+                  <div className="flex items-center bg-slate-850 rounded-xl p-1 border border-slate-700 shadow-inner">
+                    <button 
+                      onClick={handleToday}
+                      className="px-3.5 py-1.5 text-xs font-black bg-slate-700 hover:bg-slate-650 rounded-lg transition-colors cursor-pointer text-white animate-transition"
+                    >
+                      Aujourd'hui
+                    </button>
+                    <div className="w-px h-4 bg-slate-700 mx-2"></div>
+                    <button 
+                      onClick={handlePrev}
+                      className="p-1.5 hover:bg-slate-750 rounded-lg transition-colors cursor-pointer text-slate-300 hover:text-white"
+                      title="Précédent"
+                    >
+                      <ChevronLeft className="w-4.5 h-4.5" />
+                    </button>
+                    <button 
+                      onClick={handleNext}
+                      className="p-1.5 hover:bg-slate-750 rounded-lg transition-colors cursor-pointer text-slate-300 hover:text-white"
+                      title="Suivant"
+                    >
+                      <ChevronRight className="w-4.5 h-4.5" />
+                    </button>
+                  </div>
+
+                  {/* Date Picker Input */}
+                  <div className="relative">
+                    <input 
+                      type="date"
+                      value={selectedCalendarDate.toISOString().split('T')[0]}
+                      onChange={handleDatePickerChange}
+                      className="bg-slate-850 text-white text-xs font-semibold px-3.5 py-2 rounded-xl border border-slate-750 focus:outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-inner"
+                    />
+                  </div>
+
+                  {/* View Switcher */}
+                  <div className="flex bg-slate-850 border border-slate-750 rounded-xl p-1 shadow-inner">
+                    <button
+                      onClick={() => setCalendarView('week')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${calendarView === 'week' ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      Semaine
+                    </button>
+                    <button
+                      onClick={() => setCalendarView('day')}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${calendarView === 'day' ? 'bg-sky-500 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                    >
+                      Jour
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-Header details and actions */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
                 <div className="space-y-1">
-                  <p className="text-xs text-slate-400">Vue du planning de livraison et désinfection des textiles</p>
-                  <p className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2.5 py-0.5 rounded-full w-max">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                    <span>{getHeaderTitle()}</span>
+                  </h2>
+                  <p className="text-[10px] text-amber-600 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full w-max">
                     {signedUnscheduledQuotes.length} chantiers signés en attente de planification
                   </p>
                 </div>
-
+                
                 <button 
                   onClick={() => {
                     if (signedUnscheduledQuotes.length === 0) {
@@ -2544,146 +2768,265 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                     handleQuoteSelectionForAppt(signedUnscheduledQuotes[0].id);
                     setNewApptModal(true);
                   }}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center space-x-1.5 shadow-md shadow-emerald-500/10 cursor-pointer transition-colors w-full sm:w-auto text-center justify-center"
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs px-5 py-3 rounded-xl flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/20 cursor-pointer transition-all hover:-translate-y-0.5 w-full sm:w-auto text-center"
                 >
-                  <CalendarDays className="w-4 h-4" />
+                  <Plus className="w-4.5 h-4.5" />
                   <span>Planifier un Chantier</span>
                 </button>
               </div>
 
-              {/* Squelette de Calendrier Interactif (Interactive Planning Agenda/Grid) */}
+              {/* Grid layout with Sidebar */}
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 
-                {/* Left: Planning appointments list view & cancel hooks */}
-                <div className="lg:col-span-3 bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-6">
-                  <div className="flex justify-between items-center pb-4 border-b border-gray-100">
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                      <CalendarIcon className="w-4.5 h-4.5 text-sky-500" />
-                      <span>Agenda Hebdomadaire des Chantiers</span>
-                    </h3>
-                    <div className="flex space-x-1 text-[10px] font-bold bg-gray-50 p-1 rounded-lg">
-                      <span className="px-2 py-1 text-sky-600 bg-white rounded shadow-sm">Juin 2026</span>
+                {/* Main Dynamic Calendar Time-Grid Container */}
+                <div className="lg:col-span-3 bg-white rounded-3xl border border-slate-150 shadow-sm overflow-hidden flex flex-col h-[75vh] min-h-[600px] lg:h-[800px]">
+                  
+                  {/* Sticky Grid Header Row */}
+                  <div className="grid grid-cols-[70px_1fr] bg-slate-50 border-b border-slate-200 sticky top-0 z-20 shadow-sm overflow-hidden">
+                    <div className="h-14 flex items-center justify-center border-r border-slate-200 bg-slate-100 text-[9px] font-black text-slate-400 uppercase select-none">
+                      GMT+2
+                    </div>
+                    
+                    <div className="overflow-x-auto select-none">
+                      <div className={`grid ${calendarView === 'week' ? 'grid-cols-7 min-w-[700px] lg:min-w-0' : 'grid-cols-1'} divide-x divide-slate-200 text-center w-full`}>
+                        {(calendarView === 'week' 
+                          ? Array.from({ length: 7 }, (_, i) => {
+                              const d = new Date(getMonday(selectedCalendarDate));
+                              d.setDate(d.getDate() + i);
+                              return d;
+                            })
+                          : [selectedCalendarDate]
+                        ).map((dayDate, idx) => {
+                          const isCurrentDay = isToday(dayDate);
+                          return (
+                            <div key={idx} className={`py-2 px-1 flex flex-col justify-center items-center ${isCurrentDay ? 'bg-sky-500/5' : ''}`}>
+                              <span className={`text-[10px] font-black ${isCurrentDay ? 'text-sky-600' : 'text-slate-400'} uppercase tracking-wider`}>
+                                {dayDate.toLocaleDateString('fr-FR', { weekday: 'short' })}
+                              </span>
+                              <span className={`text-sm font-black leading-none mt-1 w-7 h-7 flex items-center justify-center rounded-full ${isCurrentDay ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-700'}`}>
+                                {dayDate.getDate()}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Calendar Grid 7 days */}
-                  <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-slate-400 bg-slate-50/50 p-2 rounded-xl">
-                    <div>LUN 08</div>
-                    <div>MAR 09</div>
-                    <div className="text-sky-500 bg-sky-50/30 p-1.5 rounded-lg">MER 10 (Aujourd'hui)</div>
-                    <div>JEU 11</div>
-                    <div>VEN 12</div>
-                    <div>SAM 13</div>
-                    <div>DIM 14</div>
-                  </div>
-
-                  {/* Interactive Calendar layout blocks */}
-                  <div className="space-y-3 pt-2">
-                    {appointments.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-12 text-center">Aucun chantier planifié cette semaine.</p>
-                    ) : (
-                      appointments.map(appt => {
-                        const df = documents.find(d => d.id === appt.devis_facture_id);
-                        const cl = df ? clients.find(c => c.id === df.client_id) : null;
+                  {/* Scrollable Time Grid Body */}
+                  <div className="grid grid-cols-[70px_1fr] flex-1 overflow-y-auto relative bg-white">
+                    {/* Left Column: Hours (Sticky) */}
+                    <div className="bg-slate-50 border-r border-slate-200 select-none sticky left-0 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                      {Array.from({ length: 17 }, (_, i) => {
+                        const h = 6 + i;
                         return (
-                          <div 
-                            key={appt.id} 
-                            className="p-4 bg-sky-50/30 rounded-2xl border border-sky-100 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:shadow-md transition-all"
-                          >
-                            <div className="space-y-1">
-                              <p className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 bg-sky-400 rounded-full"></span>
-                                {appt.title}
-                              </p>
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500">
-                                <span className="flex items-center gap-1">
-                                  <CalendarDays className="w-3.5 h-3.5" />
-                                  Date : {appt.date} ({appt.start_time})
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <Clock className="w-3.5 h-3.5" />
-                                  Durée requise : {appt.duration_minutes} minutes
-                                </span>
-                              </div>
-                              {cl && (
-                                <p className="text-[10px] text-slate-400">Client : {cl.first_name} {cl.last_name} | {cl.phone}</p>
-                              )}
-                            </div>
-
-                            <div className="flex items-center justify-between sm:justify-end gap-6 border-t sm:border-t-0 pt-2 sm:pt-0">
-                              <div className="text-left sm:text-right">
-                                <span className="text-[10px] text-slate-400 block uppercase">Assigné à :</span>
-                                <div className="flex gap-1.5 mt-0.5">
-                                  {appt.assigned_employee_ids.map(empId => {
-                                    const em = employees.find(e => e.id === empId);
-                                    return em ? (
-                                      <span key={empId} className="px-2 py-0.5 rounded text-[8px] font-extrabold text-white" style={{ backgroundColor: em.color }}>
-                                        {em.first_name}
-                                      </span>
-                                    ) : null;
-                                  })}
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center space-x-2">
-                                <span className="text-xs font-black text-slate-900 bg-white px-3 py-1.5 rounded-xl border border-gray-100">
-                                  {appt.final_price} €
-                                </span>
-
-                                {appt.status === 'Terminé' ? (
-                                  <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-3 py-1.5 rounded-xl inline-flex items-center space-x-1 select-none">
-                                    <Check className="w-3 h-3 stroke-[3]" />
-                                    <span>Terminé</span>
-                                  </span>
-                                ) : (
-                                  <button
-                                    onClick={() => handleOpenPaymentClosingModal(appt)}
-                                    className="bg-sky-500 hover:bg-sky-600 text-white text-[9px] font-bold px-3 py-1.5 rounded-xl transition-colors cursor-pointer flex items-center space-x-1"
-                                    title="Marquer la prestation comme terminée et saisir le règlement"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>Prestation terminée</span>
-                                  </button>
-                                )}
-
-                                <button
-                                  onClick={() => handleOpenEditAppointment(appt)}
-                                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-bold px-3 py-1.5 rounded-xl border border-slate-250 transition-colors cursor-pointer flex items-center space-x-1"
-                                  title="Modifier l'intervention, l'équipe ou ajouter des prestations additionnelles au document lié"
-                                >
-                                  <Edit className="w-3.5 h-3.5 text-slate-500" />
-                                  <span>Modifier</span>
-                                </button>
-
-                                <button 
-                                  onClick={() => handleDeleteAppointment(appt.id)}
-                                  className="text-slate-400 hover:text-red-500 p-1 rounded"
-                                  title="Annuler RDV"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
+                          <div key={h} className="h-20 border-b border-slate-100 flex items-start justify-center pr-1.5 pt-1.5 text-[9px] font-black text-slate-400">
+                            {h.toString().padStart(2, '0')}:00
                           </div>
                         );
-                      })
-                    )}
+                      })}
+                    </div>
+
+                    {/* Right column: Columns of Days */}
+                    <div className="relative overflow-x-auto flex-1">
+                      <div className={`relative h-[1360px] ${calendarView === 'week' ? 'min-w-[700px] lg:min-w-0' : 'w-full'}`}>
+                        
+                        {/* Horizontal grid lines */}
+                        <div className="absolute inset-0 pointer-events-none z-0">
+                          {Array.from({ length: 17 }, (_, i) => (
+                            <div 
+                              key={i} 
+                              className="border-b border-slate-100" 
+                              style={{ height: '80px' }}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Columns mapping */}
+                        <div className={`grid ${calendarView === 'week' ? 'grid-cols-7 h-full' : 'grid-cols-1 h-full'} divide-x divide-slate-150 relative z-10`}>
+                          {(calendarView === 'week' 
+                            ? Array.from({ length: 7 }, (_, i) => {
+                                const d = new Date(getMonday(selectedCalendarDate));
+                                d.setDate(d.getDate() + i);
+                                return d;
+                              })
+                            : [selectedCalendarDate]
+                          ).map((dayDate, dayIdx) => {
+                            const dayDateStr = dayDate.toISOString().split('T')[0];
+                            const dayAppts = appointments.filter(appt => appt.date === dayDateStr);
+                            const apptStyles = getStyledAppointmentsForDay(dayDateStr, dayAppts);
+
+                            return (
+                              <div key={dayIdx} className="relative h-full bg-slate-50/5 hover:bg-slate-50/10 transition-colors">
+                                {dayAppts.map(appt => {
+                                  const df = documents.find(d => d.id === appt.devis_facture_id);
+                                  const cl = df ? clients.find(c => c.id === df.client_id) : null;
+                                  
+                                  const [sh, sm] = appt.start_time.split(':').map(Number);
+                                  const startMins = Math.max(360, Math.min(1320, sh * 60 + sm));
+                                  const duration = Math.min(1320 - startMins, appt.duration_minutes);
+                                  
+                                  // Map minutes to relative percentage within the 06:00 to 22:00 window (17 hours = 1020 mins)
+                                  const topPercent = ((startMins - 360) / 1020) * 100;
+                                  const heightPercent = (duration / 1020) * 100;
+
+                                  const layout = apptStyles.get(appt.id) || { left: 0, width: 95 };
+                                  const firstEmp = appt.assigned_employee_ids.length > 0 
+                                    ? employees.find(e => e.id === appt.assigned_employee_ids[0]) 
+                                    : null;
+                                  const cardColor = firstEmp?.color || '#0ea5e9';
+
+                                  return (
+                                    <div
+                                      key={appt.id}
+                                      onClick={() => handleOpenEditAppointment(appt)}
+                                      className="absolute rounded-xl border p-2.5 transition-all hover:scale-[1.01] hover:shadow-lg shadow-sm cursor-pointer overflow-hidden z-10 group select-none hover:z-20 animate-transition"
+                                      style={{
+                                        top: `${topPercent}%`,
+                                        height: `calc(${heightPercent}% - 2px)`,
+                                        left: `${layout.left}%`,
+                                        width: `${layout.width}%`,
+                                        backgroundColor: `${cardColor}15`,
+                                        borderColor: cardColor,
+                                        borderLeftWidth: '5px',
+                                        color: '#1e293b'
+                                      }}
+                                    >
+                                      <div className="flex flex-col h-full justify-between">
+                                        <div className="space-y-1">
+                                          <div className="flex justify-between items-start">
+                                            <span className="text-[10px] font-black tracking-tight" style={{ color: cardColor }}>
+                                              {appt.start_time} - {formatEndTime(appt.start_time, appt.duration_minutes)}
+                                            </span>
+                                            
+                                            <div className="flex items-center space-x-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              {appt.status === 'Terminé' ? (
+                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                              ) : (
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleOpenPaymentClosingModal(appt);
+                                                  }}
+                                                  className="p-0.5 bg-white/85 hover:bg-emerald-500 hover:text-white rounded border border-slate-200 transition-colors shadow-sm cursor-pointer"
+                                                  title="Terminer la prestation"
+                                                >
+                                                  <Check className="w-3 h-3 text-emerald-600 hover:text-white" />
+                                                </button>
+                                              )}
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDeleteAppointment(appt.id);
+                                                }}
+                                                className="p-0.5 bg-white/85 hover:bg-red-500 hover:text-white rounded border border-slate-200 transition-colors shadow-sm cursor-pointer"
+                                                title="Annuler le RDV"
+                                              >
+                                                <Trash2 className="w-3 h-3 text-red-650 hover:text-white" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                          
+                                          <h4 className="font-extrabold text-xs leading-tight text-slate-800 truncate" title={appt.title}>
+                                            {appt.title}
+                                          </h4>
+                                          
+                                          {cl && (
+                                            <div className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
+                                              <span>👤</span>
+                                              <span className="truncate">{cl.first_name} {cl.last_name}</span>
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                                          <span className="text-[10px] font-black text-slate-800 bg-white/95 px-1.5 py-0.5 rounded-md border border-slate-100 shadow-sm shrink-0">
+                                            {appt.final_price} €
+                                          </span>
+                                          {appt.assigned_employee_ids.map(empId => {
+                                            const em = employees.find(e => e.id === empId);
+                                            return em ? (
+                                              <span 
+                                                key={empId} 
+                                                className="px-1.5 py-0.5 rounded-md text-[8px] font-black text-white shadow-sm truncate max-w-[70px]" 
+                                                style={{ backgroundColor: em.color }}
+                                                title={`${em.first_name} ${em.last_name}`}
+                                              >
+                                                {em.first_name}
+                                              </span>
+                                            ) : null;
+                                          })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Right sidebar: list unscheduled signed quotes */}
-                <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-4">
-                  <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Instructions Artisan</h4>
-                  <div className="text-xs text-slate-500 leading-relaxed space-y-3">
-                    <p>
-                      <strong>Étape 1 :</strong> Un devis client doit d'abord passer au statut <strong>"Signé/Accepté"</strong> dans le module Devis.
-                    </p>
-                    <p>
-                      <strong>Étape 2 :</strong> Cliquez sur <strong>"Planifier un Chantier"</strong> pour générer un ordre de mission rattaché au devis.
-                    </p>
-                    <p>
-                      <strong>Étape 3 :</strong> Assignez un ou plusieurs techniciens et estimez précisément le temps de séchage / travail pour le client.
-                    </p>
+                {/* Right sidebar: list instructions and unscheduled signed quotes */}
+                <div className="bg-white rounded-3xl border border-slate-150 p-6 shadow-sm space-y-5">
+                  <div>
+                    <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider mb-3">Chantiers Non Planifiés</h4>
+                    {signedUnscheduledQuotes.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                        Aucun devis signé n'attend de planification.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                        {signedUnscheduledQuotes.map(quote => {
+                          const cl = clients.find(c => c.id === quote.client_id);
+                          return (
+                            <div 
+                              key={quote.id}
+                              onClick={() => {
+                                handleQuoteSelectionForAppt(quote.id);
+                                setNewApptModal(true);
+                              }}
+                              className="p-3 bg-amber-50/45 hover:bg-amber-50 rounded-2xl border border-amber-100 cursor-pointer transition-all hover:scale-[1.02] flex flex-col gap-1 shadow-sm"
+                            >
+                              <div className="flex justify-between items-start gap-1">
+                                <span className="text-[10px] font-black text-amber-700 bg-amber-100/60 px-2 py-0.5 rounded-md">
+                                  {quote.number}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-900">
+                                  {quote.total_amount.toFixed(2)} €
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-slate-850 truncate">
+                                {cl ? `${cl.first_name} ${cl.last_name}` : 'Client Inconnu'}
+                              </p>
+                              <p className="text-[9px] text-slate-400">
+                                Créé le {quote.date}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <hr className="border-slate-100" />
+
+                  <div>
+                    <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider mb-2">Instructions</h4>
+                    <div className="text-xs text-slate-500 leading-relaxed space-y-3">
+                      <p>
+                        <strong>Étape 1 :</strong> Un devis client doit d'abord passer au statut <strong>"Signé/Accepté"</strong> dans le module Devis.
+                      </p>
+                      <p>
+                        <strong>Étape 2 :</strong> Cliquez sur un créneau ou sur <strong>"Planifier un Chantier"</strong> pour créer le rendez-vous.
+                      </p>
+                      <p>
+                        <strong>Étape 3 :</strong> Assignez des techniciens. La couleur de la carte correspondra au technicien principal assigné.
+                      </p>
+                    </div>
                   </div>
                 </div>
 

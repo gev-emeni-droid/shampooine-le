@@ -704,13 +704,21 @@ export const apiService = {
   // ==========================================
   // MODULE PLANNING / RENDEZ-VOUS
   // ==========================================
-  async getAppointments(): Promise<RendezVousPlanning[]> {
+  async getAppointments(start?: string, end?: string): Promise<RendezVousPlanning[]> {
     if (CLOUDFLARE_WORKER_URL) {
-      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/appointments`);
+      let url = `${CLOUDFLARE_WORKER_URL}/api/appointments`;
+      if (start && end) {
+        url += `?start=${start}&end=${end}`;
+      }
+      const res = await fetch(url);
       return res.json();
     }
     await delay(300);
-    return getStored<RendezVousPlanning[]>('appointments', []);
+    const all = getStored<RendezVousPlanning[]>('appointments', []);
+    if (start && end) {
+      return all.filter(a => a.date >= start && a.date <= end);
+    }
+    return all;
   },
 
   async saveAppointment(appt: Omit<RendezVousPlanning, 'id'> & { id?: string }): Promise<RendezVousPlanning> {

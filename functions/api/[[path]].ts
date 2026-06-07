@@ -568,7 +568,16 @@ app.delete('/employees/:id', async (c) => {
 
 app.get('/appointments', async (c) => {
   try {
-    const { results: appts } = await c.env.DB.prepare('SELECT * FROM planning').all<any>();
+    const start = c.req.query('start');
+    const end = c.req.query('end');
+    let query = 'SELECT * FROM planning';
+    const params: any[] = [];
+    if (start && end) {
+      query += ' WHERE date >= ? AND date <= ?';
+      params.push(start, end);
+    }
+    
+    const { results: appts } = await c.env.DB.prepare(query).bind(...params).all<any>();
     const { results: assignments } = await c.env.DB.prepare('SELECT * FROM planning_employes').all<any>();
 
     // Merge employee assignments
