@@ -347,6 +347,8 @@ app.post('/documents', async (c) => {
     const { doc, lines } = await c.req.json();
     const docId = doc.id || `doc-${Date.now()}`;
     const totalAmount = lines.reduce((acc: number, current: any) => acc + current.total_price, 0);
+    const totalTtc = totalAmount;
+    const totalHt = doc.total_ht || (totalAmount / 1.20);
 
     // Determine invoice number
     let docNumber = doc.number;
@@ -365,9 +367,9 @@ app.post('/documents', async (c) => {
     // Insert or replace document
     await c.env.DB.prepare(
       `INSERT OR REPLACE INTO documents (
-        id, client_id, type, number, status, date, due_date, total_amount, notes,
+        id, client_id, type, number, status, date, due_date, total_amount, total_ht, total_ttc, notes,
         signature_client, date_signature, moyen_paiement, paiement_valide, date_paiement, signature_sur_place
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         docId,
@@ -378,6 +380,8 @@ app.post('/documents', async (c) => {
         doc.date,
         doc.due_date,
         totalAmount,
+        totalHt,
+        totalTtc,
         doc.notes || null,
         doc.signature_client || null,
         doc.date_signature || null,

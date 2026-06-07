@@ -497,6 +497,19 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     }
   };
 
+  // ─── TVA HELPER ────────────────────────────────────────────────────────────
+  // Tous les prix catalogue sont en TTC. Pour B2B, on extrait le HT via /1.20.
+  const getDocTotals = (lines: typeof newDocLines, isB2B: boolean) => {
+    const totalTTC = lines.reduce((acc, l) => acc + Number(l.quantity) * Number(l.unit_price), 0);
+    if (isB2B) {
+      const totalHT = totalTTC / 1.20;
+      const montantTVA = totalTTC - totalHT;
+      return { totalHT, montantTVA, totalTTC };
+    }
+    return { totalHT: null, montantTVA: null, totalTTC };
+  };
+  // ───────────────────────────────────────────────────────────────────────────
+
   const handleInsertVariable = (variable: string) => {
     const textarea = document.getElementById('email-body-editor') as HTMLTextAreaElement;
     if (!textarea || !editingConfig) return;
@@ -1276,15 +1289,27 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
         return;
       }
 
+      // Déterminer si le client est professionnel (B2B)
+      const finalClient = clients.find(c => c.id === finalClientId);
+      const isB2B = finalClient?.type_client === 'professionnel';
+
       const sanitLines = newDocLines.map(line => {
         const p = prestations.find(x => x.id === line.prestation_id);
+        const unitPriceTTC = Number(line.unit_price);
+        const unitPriceHT = isB2B ? unitPriceTTC / 1.20 : unitPriceTTC;
+        const qty = Number(line.quantity);
         return {
           prestation_name: line.prestation_id === 'custom' ? (line.custom_name || 'Prestation personnalisée') : (p ? p.name : 'Service Nettoyage'),
-          quantity: Number(line.quantity),
-          unit_price: Number(line.unit_price),
-          total_price: Number(line.quantity) * Number(line.unit_price)
+          quantity: qty,
+          unit_price: isB2B ? unitPriceHT : unitPriceTTC, // stocke HT pour B2B
+          total_price: qty * (isB2B ? unitPriceHT : unitPriceTTC)
         };
       });
+
+      // Calcul des totaux fiscaux
+      const totalTTC = newDocLines.reduce((acc, l) => acc + Number(l.quantity) * Number(l.unit_price), 0);
+      const totalHT = isB2B ? totalTTC / 1.20 : totalTTC;
+      const montantTVA = isB2B ? totalTTC - totalHT : 0;
 
       let finalNotes = newDocForm.notes;
       if (docInterventionAddress) {
@@ -1298,8 +1323,10 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
           status: 'Brouillon',
           date: newDocForm.date,
           due_date: newDocForm.due_date,
-          notes: finalNotes
-        },
+          notes: finalNotes,
+          total_ht: totalHT,
+          total_ttc: totalTTC
+        } as any,
         sanitLines
       );
 
@@ -2401,42 +2428,76 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                         </div>
                       </div>
 
-                      {/* Line items table */}
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="border-b border-gray-100 text-slate-400 font-bold uppercase text-[9px]">
-                            <th className="py-2">Désignation de la prestation</th>
-                            <th className="py-2 text-center">Qté</th>
-                            <th className="py-2 text-right">Unit H.T</th>
-                            <th className="py-2 text-right">Total H.T</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {viewingLines.map((line, idx) => (
-                            <tr key={idx} className="border-b border-slate-50 text-slate-800">
-                              <td className="py-2.5 font-semibold text-slate-900">{line.prestation_name}</td>
-                              <td className="py-2.5 text-center">{line.quantity}</td>
-                              <td className="py-2.5 text-right">{line.unit_price.toFixed(2)} €</td>
-                              <td className="py-2.5 text-right font-bold text-slate-900">{line.total_price.toFixed(2)} €</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      {/* Line items table — adapté B2B/B2C */}
+                      {(() => {
+                        const cl = clients.find(c => c.id === viewingDoc.client_id);
+                        const isB2BDoc = cl?.type_client === 'professionnel';
+                        const totalTTC = viewingDoc.total_amount;
+                        // Recalcul depuis les lignes (unit_price stocké en HT pour B2B)
+                        const totalHTDoc = viewingDoc.total_ht ?? (isB2BDoc ? totalTTC / 1.20 : totalTTC);
+                        const tvaDoc = isB2BDoc ? totalTTC - totalHTDoc : 0;
+                        return (
+                          <>
+                            <table className="w-full text-xs text-left">
+                              <thead>
+                                <tr className="border-b border-gray-100 text-slate-400 font-bold uppercase text-[9px]">
+                                  <th className="py-2">Désignation de la prestation</th>
+                                  <th className="py-2 text-center">Qté</th>
+                                  <th className="py-2 text-right">{isB2BDoc ? 'Prix Unit. HT' : 'Prix Unit. TTC'}</th>
+                                  <th className="py-2 text-right">{isB2BDoc ? 'Total Ligne HT' : 'Total Ligne TTC'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {viewingLines.map((line, idx) => (
+                                  <tr key={idx} className="border-b border-slate-50 text-slate-800">
+                                    <td className="py-2.5 font-semibold text-slate-900">{line.prestation_name}</td>
+                                    <td className="py-2.5 text-center">{line.quantity}</td>
+                                    <td className="py-2.5 text-right">{line.unit_price.toFixed(2)} €</td>
+                                    <td className="py-2.5 text-right font-bold text-slate-900">{line.total_price.toFixed(2)} €</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
 
-                      <div className="flex flex-col items-end space-y-1 pt-4 border-t border-gray-100">
-                        <div className="text-xs text-slate-400 flex justify-between w-64">
-                          <span>Montant Total HT :</span>
-                          <span className="text-slate-900 font-semibold">{viewingDoc.total_amount.toFixed(2)} €</span>
-                        </div>
-                        <div className="text-xs text-slate-400 flex justify-between w-64">
-                          <span>TVA non applicable (art. 293B du CGI) :</span>
-                          <span className="text-slate-900 font-semibold">0.00 €</span>
-                        </div>
-                        <div className="text-sm font-bold text-slate-900 flex justify-between w-64 pt-2 border-t border-slate-100">
-                          <span>Total Net à payer (TTC) :</span>
-                          <span className="text-sky-600 text-base font-black">{viewingDoc.total_amount.toFixed(2)} €</span>
-                        </div>
-                      </div>
+                            <div className="flex flex-col items-end space-y-1 pt-4 border-t border-gray-100">
+                              {isB2BDoc ? (
+                                <>
+                                  <div className="text-xs text-slate-400 flex justify-between w-72">
+                                    <span>Total Global HT :</span>
+                                    <span className="text-slate-900 font-semibold">{totalHTDoc.toFixed(2)} €</span>
+                                  </div>
+                                  <div className="text-xs text-slate-400 flex justify-between w-72">
+                                    <span>TVA (20%) :</span>
+                                    <span className="text-slate-900 font-semibold">{tvaDoc.toFixed(2)} €</span>
+                                  </div>
+                                  <div className="text-sm font-bold text-indigo-700 flex justify-between w-72 pt-2 border-t border-slate-100">
+                                    <span>Total Global TTC (Net à payer) :</span>
+                                    <span className="text-indigo-600 text-base font-black">{totalTTC.toFixed(2)} €</span>
+                                  </div>
+                                  <div className="mt-1">
+                                    <span className="text-[8px] text-indigo-400 font-medium italic">🏢 Document B2B — TVA 20% détaillée</span>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="text-xs text-slate-400 flex justify-between w-64">
+                                    <span>Total global TTC :</span>
+                                    <span className="text-slate-900 font-semibold">{totalTTC.toFixed(2)} €</span>
+                                  </div>
+                                  <div className="text-xs text-slate-400 flex justify-between w-64">
+                                    <span>TVA non applicable (art. 293B du CGI) :</span>
+                                    <span className="text-slate-900 font-semibold">0.00 €</span>
+                                  </div>
+                                  <div className="text-sm font-bold text-slate-900 flex justify-between w-64 pt-2 border-t border-slate-100">
+                                    <span>Total Net à payer (TTC) :</span>
+                                    <span className="text-sky-600 text-base font-black">{totalTTC.toFixed(2)} €</span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
 
                       {viewingDoc.notes && (
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-500">
@@ -5800,6 +5861,47 @@ export default {
                   )}
                 </div>
               </div>
+
+              {/* ── Bloc totalisation dynamique TVA ── */}
+              {newDocLines.length > 0 && (() => {
+                const selectedC = clients.find(c => c.id === newDocForm.client_id);
+                const isB2BClient = selectedC?.type_client === 'professionnel';
+                const totals = getDocTotals(newDocLines, isB2BClient);
+                return (
+                  <div className={`rounded-2xl border p-4 space-y-1.5 ${
+                    isB2BClient
+                      ? 'bg-indigo-50/60 border-indigo-100'
+                      : 'bg-sky-50/60 border-sky-100'
+                  }`}>
+                    <p className={`text-[9px] uppercase font-black tracking-wider mb-2 ${
+                      isB2BClient ? 'text-indigo-600' : 'text-sky-600'
+                    }`}>
+                      {isB2BClient ? '🏢 Mode B2B — Détail TVA 20%' : '👤 Mode B2C — Prix TTC'}
+                    </p>
+                    {isB2BClient ? (
+                      <>
+                        <div className="flex justify-between text-xs text-slate-600">
+                          <span>Total HT</span>
+                          <span className="font-bold">{totals.totalHT!.toFixed(2)} €</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-slate-500">
+                          <span>TVA (20%)</span>
+                          <span className="font-semibold">{totals.montantTVA!.toFixed(2)} €</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-black text-indigo-700 border-t border-indigo-200 pt-1.5 mt-1">
+                          <span>Total TTC (Net à payer)</span>
+                          <span>{totals.totalTTC.toFixed(2)} €</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between text-sm font-black text-sky-700">
+                        <span>Total TTC</span>
+                        <span>{totals.totalTTC.toFixed(2)} €</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="space-y-1 pt-2">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Notes du devis / Conditions de ventes</span>

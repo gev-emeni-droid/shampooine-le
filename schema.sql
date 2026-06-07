@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS documents (
   status TEXT NOT NULL CHECK (status IN ('Brouillon', 'Envoyé au client', 'Signé/Accepté', 'Facturé', 'Payé', 'Signé')),
   date TEXT NOT NULL,          -- YYYY-MM-DD
   due_date TEXT NOT NULL,      -- YYYY-MM-DD
-  total_amount REAL NOT NULL DEFAULT 0.0,
+  total_amount REAL NOT NULL DEFAULT 0.0,  -- = TTC (net à payer)
+  total_ht REAL DEFAULT 0.0,               -- HT (pour B2B = total_amount / 1.20)
+  total_ttc REAL DEFAULT 0.0,              -- TTC explicite (= total_amount)
   notes TEXT,
   signature_client TEXT,
   date_signature TEXT,

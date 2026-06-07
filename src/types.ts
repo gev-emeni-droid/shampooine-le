@@ -58,7 +58,9 @@ export interface DevisFacture {
   status: DocumentStatus;
   date: string;
   due_date: string;
-  total_amount: number;
+  total_amount: number;   // = total TTC (net à payer)
+  total_ht?: number;     // montant HT (pour B2B, = total_amount / 1.20)
+  total_ttc?: number;    // montant TTC (= total_amount, explicite pour clarté)
   notes?: string;
   signature_client?: string;
   date_signature?: string;
