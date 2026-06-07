@@ -332,8 +332,15 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
     try {
       setIsSigning(true);
       
-      // Update signature and status
-      await apiService.signDevis(document.id, signerName.trim());
+      let signatureDataUrl = signerName.trim();
+      const canvas = document.getElementById('signature-canvas') as HTMLCanvasElement;
+      if (canvas) {
+        // Convert drawn strokes to base64
+        signatureDataUrl = canvas.toDataURL('image/png');
+      }
+
+      // Update signature and status with the drawn Base64
+      await apiService.signDevis(document.id, signatureDataUrl);
 
       onToast("Félicitations ! Votre signature électronique a été enregistrée avec succès.", "success");
       
@@ -712,6 +719,89 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                     placeholder="Ex: Marie Laurent"
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl text-xs p-3 outline-none text-white focus:bg-slate-850 focus:ring-1 focus:ring-sky-500 font-medium font-sans"
                   />
+                </div>
+
+                {/* HTML5 Tactile/Mouse Canvas Signature Pad */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase font-bold text-slate-400 block">Tracez votre signature ci-dessous *</label>
+                  <div className="relative border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/80">
+                    <canvas
+                      id="signature-canvas"
+                      width={400}
+                      height={180}
+                      className="w-full h-[180px] cursor-crosshair touch-none"
+                      onMouseDown={(e) => {
+                        const canvas = e.currentTarget;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        ctx.strokeStyle = '#38bdf8'; // Sky-400
+                        ctx.lineWidth = 3;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        const rect = canvas.getBoundingClientRect();
+                        ctx.beginPath();
+                        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+                        (canvas as any).isDrawing = true;
+                      }}
+                      onMouseMove={(e) => {
+                        const canvas = e.currentTarget;
+                        if (!(canvas as any).isDrawing) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+                        ctx.stroke();
+                      }}
+                      onMouseUp={(e) => {
+                        (e.currentTarget as any).isDrawing = false;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as any).isDrawing = false;
+                      }}
+                      onTouchStart={(e) => {
+                        const canvas = e.currentTarget;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        ctx.strokeStyle = '#38bdf8';
+                        ctx.lineWidth = 3;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        const rect = canvas.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        ctx.beginPath();
+                        ctx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+                        (canvas as any).isDrawing = true;
+                      }}
+                      onTouchMove={(e) => {
+                        const canvas = e.currentTarget;
+                        if (!(canvas as any).isDrawing) return;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) return;
+                        const rect = canvas.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        ctx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+                        ctx.stroke();
+                      }}
+                      onTouchEnd={(e) => {
+                        (e.currentTarget as any).isDrawing = false;
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const canvas = document.getElementById('signature-canvas') as HTMLCanvasElement;
+                        if (canvas) {
+                          const ctx = canvas.getContext('2d');
+                          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        }
+                      }}
+                      className="absolute bottom-2 right-2 bg-slate-900 border border-slate-800 text-[8px] uppercase tracking-wider font-extrabold px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white"
+                    >
+                      Effacer
+                    </button>
+                  </div>
                 </div>
 
                 {/* Calligraphic handwrite preview simulation */}

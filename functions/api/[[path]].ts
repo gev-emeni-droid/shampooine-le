@@ -505,13 +505,96 @@ app.post('/documents/:devisId/sign', async (c) => {
     const { signature_client } = await c.req.json();
     const dateSignature = new Date().toISOString();
 
+    // 1. Update quote status and signature
     await c.env.DB.prepare(
       'UPDATE documents SET status = "Signé", signature_client = ?, date_signature = ? WHERE id = ?'
     )
       .bind(signature_client, dateSignature, devisId)
       .run();
 
-    const fresh = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(devisId).first();
+    const fresh = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(devisId).first<any>();
+    if (!fresh) {
+      return c.json({ error: 'Document non trouvé après signature' }, 404);
+    }
+
+    // 2. Fetch Client details
+    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(fresh.client_id).first<any>();
+    if (client && client.email) {
+      // 3. Fetch configurations_emails for devis_sending
+      const config = await c.env.DB.prepare(
+        'SELECT * FROM configurations_emails WHERE flux_type = "devis_sending"'
+      ).bind().first<any>();
+
+      const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
+      const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
+
+      let subject = config ? config.sujet : `Votre devis de prestation - ${companyName}`;
+      let body = config 
+        ? config.corps_message 
+        : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre devis a bien été accepté et signé.\n\nVeuillez planifier votre rendez-vous en ligne via le lien ci-dessous :\n{LIEN_UNIQUE}\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}';
+
+      // 4. Inject dynamic parameters
+      const reqOrigin = new URL(c.req.url).origin;
+      const schedulerLink = `${reqOrigin}/prendre-rendez-vous?devis=${fresh.id}`;
+
+      const replacements: Record<string, string> = {
+        PRENOM_CLIENT: client.first_name || '',
+        NOM_CLIENT: client.last_name || '',
+        NOM_ENTREPRISE: companyName,
+        LIEN_UNIQUE: schedulerLink,
+        LIEN_DOCUMENT: schedulerLink,
+        NUMERO_DOCUMENT: fresh.number || fresh.id,
+        TOTAL_DOCUMENT: `${(fresh.total_amount || 0).toFixed(2)} €`
+      };
+
+      Object.entries(replacements).forEach(([key, val]) => {
+        const tag = `{${key}}`;
+        subject = subject.replace(new RegExp(tag, 'g'), val);
+        body = body.replace(new RegExp(tag, 'g'), val);
+      });
+
+      // 5. Send via Resend or log simulation
+      const resendApiKey = c.env.RESEND_API_KEY;
+      const from = `${companyName} <notifications@l-iamani.com>`;
+
+      if (resendApiKey) {
+        const htmlBody = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px;">
+            <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 20px 24px; border-radius: 12px; margin-bottom: 24px;">
+              <h2 style="color: white; font-weight: 800; margin: 0; font-size: 18px;">${companyName}</h2>
+            </div>
+            <div style="white-space: pre-wrap; line-height: 1.7; font-size: 14px; color: #374151;">
+              ${body.replace(/\n/g, '<br/>')}
+            </div>
+            <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+            <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+              Cet email a été envoyé automatiquement depuis votre espace ${companyName}.
+            </p>
+          </div>
+        `;
+
+        try {
+          await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from,
+              to: [client.email],
+              subject,
+              html: htmlBody
+            })
+          });
+        } catch (mailErr) {
+          console.error('[Resend Sign Auto-Email] Error:', mailErr);
+        }
+      } else {
+        console.log(`[Resend Auto-Email Simulation] Devis signé. Client email sent to ${client.email}. Link: ${schedulerLink}`);
+      }
+    }
+
     return c.json(fresh);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);

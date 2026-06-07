@@ -421,39 +421,22 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
                           </div>
                         </div>
 
-                        {/* Action status switcher for Employee */}
-                        <div className="space-y-2">
-                          <label className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Changer le statut</label>
-                          <div className="flex gap-2">
-                            {['Planifié', 'En cours', 'Terminé'].map((st) => {
-                              const isActive = selectedAppt.status === st;
-                              return (
-                                <button
-                                  key={st}
-                                  onClick={async () => {
-                                    try {
-                                      const updated = { ...selectedAppt, status: st as any };
-                                      await apiService.saveAppointment(updated);
-                                      onToast(`Intervention mise à jour : ${st}`, "success");
-                                      loadEmployeeData();
-                                      setSelectedAppt(updated);
-                                    } catch (err) {
-                                      console.error(err);
-                                      onToast("Erreur de mise à jour.", "info");
-                                    }
-                                  }}
-                                  className={`flex-1 text-center py-2 px-1 text-[10px] font-bold rounded-lg transition-colors cursor-pointer border ${
-                                    isActive 
-                                      ? 'bg-sky-500 border-sky-400 text-white' 
-                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
-                                  }`}
-                                >
-                                  {st}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
+                        {/* WORKFLOW AUTOMATISÉ : MODE EMPLOYÉ TERRAIN */}
+                        {(() => {
+                          const doc = documents.find(d => d.id === selectedAppt.devis_facture_id);
+                          if (!doc) return null;
+
+                          // Local/state management helpers for employee inline session
+                          return (
+                            <EmployeePrestationManager 
+                              appt={selectedAppt}
+                              doc={doc}
+                              onToast={onToast}
+                              onRefresh={loadEmployeeData}
+                              prestations={prestations}
+                            />
+                          );
+                        })()}
 
                       </div>
                     ) : (
@@ -551,6 +534,423 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
 
       </main>
 
+    </div>
+  );
+}
+
+// =========================================================================
+// EMPLOYEE TERRAIN WORKFLOW MANAGER (PHOTOS, LIVE LINES CALCULATIONS, CHECKOUT)
+// =========================================================================
+import { Trash, Plus, Check } from 'lucide-react';
+
+interface EmployeePrestationManagerProps {
+  appt: RendezVousPlanning;
+  doc: DevisFacture;
+  onToast: (msg: string, type: 'success' | 'info') => void;
+  onRefresh: () => void;
+  prestations: Prestation[];
+}
+
+function EmployeePrestationManager({ appt, doc, onToast, onRefresh, prestations }: EmployeePrestationManagerProps) {
+  const [status, setStatus] = useState<string>(appt.status);
+  const [docLines, setDocLines] = useState<LigneDocument[]>([]);
+  const [photos, setPhotos] = useState<DocumentPhoto[]>([]);
+  
+  // Custom manual prestations form
+  const [selectedPrestationId, setSelectedPrestationId] = useState<string>(prestations[0]?.id || '');
+  const [qty, setQty] = useState<number>(1);
+  
+  // Photo upload simulated inputs
+  const [loadingLines, setLoadingLines] = useState(false);
+  const [simulatedPhotoUrl, setSimulatedPhotoUrl] = useState('');
+  const [photoCaption, setPhotoCaption] = useState('');
+  
+  // Final payment variables
+  const [paymentMode, setPaymentMode] = useState<'ESPECES' | 'VIREMENT'>('ESPECES');
+
+  // Load photos and document lines
+  const loadDocData = async () => {
+    try {
+      setLoadingLines(true);
+      const lines = await apiService.getLignesDocument(doc.id);
+      const docPhotos = await apiService.getDocumentPhotos(doc.id);
+      setDocLines(lines);
+      setPhotos(docPhotos);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingLines(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDocData();
+  }, [doc.id]);
+
+  // Photo helpers
+  const handleUploadPhoto = async (type: 'before' | 'after') => {
+    const defaultPlaceholder = type === 'before' 
+      ? 'https://images.unsplash.com/photo-1540518614846-7eded433c457?auto=format&fit=crop&w=600&q=80'
+      : 'https://images.unsplash.com/photo-1558036117-15d82a90b9b1?auto=format&fit=crop&w=600&q=80';
+      
+    const url = simulatedPhotoUrl.trim() || defaultPlaceholder;
+    const caption = photoCaption.trim() || `${type === 'before' ? 'Avant' : 'Après'} prestation`;
+
+    try {
+      await apiService.saveDocumentPhoto({
+        devis_facture_id: doc.id,
+        photo_url: url,
+        caption,
+        before_after: type
+      });
+      onToast(`Photo "${type.toUpperCase()}" enregistrée !`, 'success');
+      setSimulatedPhotoUrl('');
+      setPhotoCaption('');
+      loadDocData();
+    } catch (err) {
+      onToast("Erreur lors de l'enregistrement de la photo.", 'info');
+    }
+  };
+
+  // Add line item
+  const handleAddLine = async () => {
+    const target = prestations.find(p => p.id === selectedPrestationId);
+    if (!target) return;
+
+    try {
+      const newLinePrice = target.prix_unitaire || target.base_price || 0;
+      const newLineTotal = newLinePrice * qty;
+
+      const currentLines = [...docLines];
+      const existingLineIndex = currentLines.findIndex(l => l.prestation_name === target.name);
+
+      if (existingLineIndex !== -1) {
+        currentLines[existingLineIndex].quantity += qty;
+        currentLines[existingLineIndex].total_price = currentLines[existingLineIndex].quantity * currentLines[existingLineIndex].unit_price;
+      } else {
+        currentLines.push({
+          id: `line-emp-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          devis_facture_id: doc.id,
+          prestation_name: target.name,
+          quantity: qty,
+          unit_price: newLinePrice,
+          total_price: newLineTotal
+        });
+      }
+
+      const newTotal = currentLines.reduce((sum, line) => sum + line.total_price, 0);
+      const updatedDoc = {
+        ...doc,
+        total_amount: newTotal
+      };
+
+      // Save document and lines
+      await apiService.saveDevisFacture(updatedDoc, currentLines);
+      
+      // Update appointment price as well
+      await apiService.saveAppointment({
+        ...appt,
+        final_price: newTotal
+      });
+
+      onToast("Ligne ajoutée avec succès !", 'success');
+      setQty(1);
+      loadDocData();
+      onRefresh();
+    } catch (err) {
+      onToast("Erreur lors de l'ajout.", 'info');
+    }
+  };
+
+  // Remove line item
+  const handleRemoveLine = async (lineId: string) => {
+    try {
+      const currentLines = docLines.filter(l => l.id !== lineId);
+      const newTotal = currentLines.reduce((sum, line) => sum + line.total_price, 0);
+      
+      const updatedDoc = {
+        ...doc,
+        total_amount: newTotal
+      };
+
+      await apiService.saveDevisFacture(updatedDoc, currentLines);
+
+      await apiService.saveAppointment({
+        ...appt,
+        final_price: newTotal
+      });
+
+      onToast("Ligne supprimée !", 'success');
+      loadDocData();
+      onRefresh();
+    } catch (err) {
+      onToast("Erreur lors de la suppression.", 'info');
+    }
+  };
+
+  // Prestation start transition
+  const handleStartPrestation = async () => {
+    try {
+      const updatedAppt = { ...appt, status: 'En cours' as AppointmentStatus };
+      await apiService.saveAppointment(updatedAppt);
+      setStatus('En cours');
+      onToast("Chantier démarré ! Veuillez prendre les photos AVANT.", 'success');
+      onRefresh();
+    } catch (e) {
+      onToast("Impossible de démarrer le chantier.", 'info');
+    }
+  };
+
+  // Checkout and submit
+  const handleFinalizePrestation = async () => {
+    const photosAvant = photos.filter(p => p.before_after === 'before');
+    const photosApres = photos.filter(p => p.before_after === 'after');
+
+    if (photosAvant.length === 0) {
+      onToast("Action requise : Veuillez d'abord ajouter au moins 1 photo AVANT.", 'info');
+      return;
+    }
+    if (photosApres.length === 0) {
+      onToast("Action requise : Veuillez d'abord ajouter au moins 1 photo APRÈS.", 'info');
+      return;
+    }
+
+    try {
+      // 1. Update planning status
+      const finalAppt = { ...appt, status: 'Terminé' as AppointmentStatus };
+      await apiService.saveAppointment(finalAppt);
+
+      // 2. Convert quote to FACTURE if still a quote
+      let finalDoc = doc;
+      if (doc.type === 'devis') {
+        finalDoc = await apiService.convertDevisToFacture(doc.id);
+      }
+
+      // 3. Update payment parameters based on ESPECES / VIREMENT
+      const valPaiement = paymentMode === 'ESPECES' ? 1 : 0;
+      const statusDocument = paymentMode === 'ESPECES' ? 'Payé' : 'Facturé';
+      
+      const updatedDoc = {
+        ...finalDoc,
+        status: statusDocument as any,
+        moyen_paiement: paymentMode,
+        paiement_valide: valPaiement === 1,
+        date_paiement: valPaiement === 1 ? new Date().toISOString() : null
+      };
+
+      await apiService.saveDevisFacture(updatedDoc, docLines);
+
+      // 4. Send Invoice dynamic Resend flow
+      const client = await apiService.getClientById(doc.client_id);
+      if (client && client.email) {
+        let noteVirement = '';
+        if (paymentMode === 'VIREMENT') {
+          noteVirement = `📋 INSTRUCTIONS DE VIREMENT BANCAIRE :\nVeuillez virer le montant restant à payer de ${updatedDoc.total_amount.toFixed(2)} € sur notre compte.\nIBAN: FR76 1234 5678 9012 3456 7890 123\nIndiquez la référence: ${updatedDoc.number} dans l'intitulé.`;
+        }
+
+        await apiService.sendAutomatedEmail(
+          'facture_sending',
+          {
+            PRENOM_CLIENT: client.first_name,
+            NOM_CLIENT: client.last_name,
+            NUMERO_DOCUMENT: updatedDoc.number,
+            TOTAL_DOCUMENT: `${updatedDoc.total_amount.toFixed(2)} €`,
+            NOTE_VIREMENT: noteVirement,
+          },
+          client.email
+        );
+      }
+
+      onToast(`Intervention terminée avec succès (${paymentMode}) !`, 'success');
+      onRefresh();
+    } catch (err) {
+      console.error(err);
+      onToast("Erreur lors de la finalisation du chantier.", 'info');
+    }
+  };
+
+  const hasBefore = photos.some(p => p.before_after === 'before');
+  const hasAfter = photos.some(p => p.before_after === 'after');
+
+  return (
+    <div className="space-y-4 pt-4 border-t border-slate-800">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Workflow Terrain</span>
+        <span className="text-[9px] uppercase font-bold px-2 py-0.5 rounded bg-slate-950 text-sky-400 border border-slate-800">
+          Chantier {appt.status}
+        </span>
+      </div>
+
+      {status === 'Planifié' && (
+        <button
+          onClick={handleStartPrestation}
+          className="w-full py-3 bg-sky-500 hover:bg-sky-600 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg transition-colors flex items-center justify-center space-x-2"
+        >
+          <Camera className="w-4 h-4" />
+          <span>Démarrer la prestation</span>
+        </button>
+      )}
+
+      {status !== 'Planifié' && (
+        <div className="space-y-4 animate-in fade-in duration-200">
+          
+          {/* UPLOAD SIMULATION BOX */}
+          <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-850 space-y-3">
+            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wide block">💾 Enregistrement Photos</span>
+            
+            <input 
+              type="text" 
+              placeholder="Simuler URL Photo (Laisser vide pour exemple)" 
+              value={simulatedPhotoUrl}
+              onChange={e => setSimulatedPhotoUrl(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 text-[10px] p-2 rounded-lg outline-none text-white"
+            />
+            
+            <input 
+              type="text" 
+              placeholder="Légende (ex: Usure canapé avant)" 
+              value={photoCaption}
+              onChange={e => setPhotoCaption(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-800 text-[10px] p-2 rounded-lg outline-none text-white"
+            />
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleUploadPhoto('before')}
+                className="flex-1 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[10px] font-bold rounded-lg border border-amber-500/20 flex items-center justify-center space-x-1"
+              >
+                <Camera className="w-3 h-3" />
+                <span>Photo AVANT</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUploadPhoto('after')}
+                className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/20 flex items-center justify-center space-x-1"
+              >
+                <Camera className="w-3 h-3" />
+                <span>Photo APRÈS</span>
+              </button>
+            </div>
+            
+            {/* Show local uploads status badges */}
+            <div className="flex justify-between items-center text-[9px] pt-1 text-slate-500">
+              <span className={hasBefore ? 'text-amber-400 font-bold' : ''}>{hasBefore ? '✔ Photo Avant OK' : '⚠ Manque photo Avant'}</span>
+              <span className={hasAfter ? 'text-emerald-400 font-bold' : ''}>{hasAfter ? '✔ Photo Après OK' : '⚠ Manque photo Après'}</span>
+            </div>
+          </div>
+
+          {/* DYNAMIC PRESTATIONS LIST & LIVE RE-CALCULATION */}
+          <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-850 space-y-3">
+            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wide block">🧼 Lignes de Prestation (Ajustement Direct)</span>
+
+            {loadingLines ? (
+              <p className="text-[10px] text-slate-500 italic text-center">Calcul des lignes...</p>
+            ) : (
+              <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                {docLines.map(line => (
+                  <div key={line.id} className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg text-[10px] text-slate-300">
+                    <div className="truncate pr-2 max-w-[150px]">
+                      <span className="font-bold text-white block">{line.prestation_name}</span>
+                      <span>{line.quantity} x {line.unit_price.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="font-bold text-white">{line.total_price.toFixed(2)} €</span>
+                      <button
+                        onClick={() => handleRemoveLine(line.id)}
+                        className="text-red-400 hover:text-red-500 p-1 cursor-pointer flex items-center justify-center"
+                        title="Supprimer la prestation"
+                      >
+                        <Trash className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Total display */}
+            <div className="flex justify-between items-center pt-2 border-t border-slate-850 text-xs font-bold text-white">
+              <span>Total révisé :</span>
+              <span className="text-sky-400 font-mono">{doc.total_amount.toFixed(2)} €</span>
+            </div>
+
+            {/* Quick catalog insertion form */}
+            <div className="pt-2 grid grid-cols-12 gap-2 items-center">
+              <div className="col-span-6">
+                <select
+                  value={selectedPrestationId}
+                  onChange={e => setSelectedPrestationId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-[10px] p-2 rounded-lg outline-none text-white"
+                >
+                  {prestations.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.prix_unitaire || p.base_price} €)</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-3">
+                <input 
+                  type="number"
+                  min={1}
+                  value={qty}
+                  onChange={e => setQty(Math.max(1, Number(e.target.value)))}
+                  className="w-full bg-slate-900 border border-slate-800 text-[10px] p-2 rounded-lg text-center text-white"
+                />
+              </div>
+              <div className="col-span-3">
+                <button
+                  type="button"
+                  onClick={handleAddLine}
+                  className="w-full py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[10px] font-black flex items-center justify-center space-x-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>[+]</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* CHECKOUT FINALIZE PANEL */}
+          <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-850 space-y-3">
+            <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wide block">💳 Mode de paiement &amp; Clôture</span>
+            
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentMode('ESPECES')}
+                className={`flex-1 py-2 px-1 text-[10px] font-black rounded-lg border cursor-pointer transition-all ${
+                  paymentMode === 'ESPECES'
+                    ? 'bg-sky-500 border-sky-400 text-white shadow-md'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                💵 ESPÈCES
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMode('VIREMENT')}
+                className={`flex-1 py-2 px-1 text-[10px] font-black rounded-lg border cursor-pointer transition-all ${
+                  paymentMode === 'VIREMENT'
+                    ? 'bg-sky-500 border-sky-400 text-white shadow-md'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                🏦 VIREMENT
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleFinalizePrestation}
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-colors flex items-center justify-center space-x-1.5"
+            >
+              <Check className="w-4 h-4" />
+              <span>Valider &amp; Clôturer le chantier</span>
+            </button>
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }

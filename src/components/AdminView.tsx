@@ -2632,6 +2632,36 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                       
                       <div className="space-y-3.5">
                         
+                        {/* Clôture Paiement Virement Admin */}
+                        {viewingDoc.type === 'facture' && viewingDoc.status === 'Facturé' && viewingDoc.moyen_paiement === 'VIREMENT' && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const updated = await apiService.updateDocumentStatus(viewingDoc.id, 'Payé');
+                                // also update payment parameters
+                                const updatedFull = {
+                                  ...viewingDoc,
+                                  status: 'Payé' as DocumentStatus,
+                                  paiement_valide: true,
+                                  date_paiement: new Date().toISOString()
+                                };
+                                await apiService.saveDevisFacture(updatedFull, viewingLines);
+                                setViewingDoc(updatedFull);
+                                onToast("Paiement validé et facture clôturée avec succès !", "success");
+                                // reload documents
+                                const freshDocs = await apiService.getDevisFactures();
+                                setDocuments(freshDocs);
+                              } catch (err) {
+                                onToast("Erreur lors de la validation du paiement.", "info");
+                              }
+                            }}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-md shadow-emerald-600/10 cursor-pointer transition-all"
+                          >
+                            <Check className="w-4 h-4" />
+                            <span>Clôturer et valider le paiement</span>
+                          </button>
+                        )}
+
                         <div>
                           <label className="text-[10px] text-slate-400 font-bold block mb-1">METTRE À JOUR LE STATUT</label>
                           <select 
