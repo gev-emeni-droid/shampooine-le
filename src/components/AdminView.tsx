@@ -479,7 +479,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       });
     });
     
-    return appptStyles;
+    return apptStyles;
   };
 
   const getAvailableVariables = (fluxType: string): string[] => {
