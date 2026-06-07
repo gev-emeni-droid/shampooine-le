@@ -195,12 +195,24 @@ export default function App() {
 
           <div className="bg-slate-900/60 backdrop-blur-md rounded-3xl border border-slate-800 p-8 w-full max-w-md shadow-2xl space-y-8 relative z-10 text-slate-300">
             
-            <div className="text-center space-y-2">
-              <div className="bg-gradient-to-tr from-sky-400 to-blue-600 p-3 h-12 w-12 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-sky-500/10">
-                <Lock className="w-6 h-6 text-white" />
-              </div>
+            <div className="text-center space-y-3">
+              {entrepriseConfig?.logo_url ? (
+                <div className="flex justify-center">
+                  <img
+                    src={entrepriseConfig.logo_url}
+                    alt={entrepriseConfig.nom_entreprise || 'Logo'}
+                    className="h-16 w-16 object-contain rounded-2xl shadow-lg border border-slate-700/50 bg-slate-800/40 p-1"
+                  />
+                </div>
+              ) : (
+                <div className="bg-gradient-to-tr from-sky-400 to-blue-600 p-3 h-14 w-14 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-sky-500/10">
+                  <Lock className="w-7 h-7 text-white" />
+                </div>
+              )}
               <div>
-                <span className="text-lg font-bold text-white tracking-tight">Espace Pro Shampooine Le</span>
+                <span className="text-lg font-bold text-white tracking-tight">
+                  {entrepriseConfig?.nom_entreprise || 'Espace Pro Shampooine Le'}
+                </span>
                 <p className="text-[10px] uppercase text-sky-400 font-extrabold tracking-widest mt-1">Authentification sécurisée</p>
               </div>
             </div>
@@ -278,7 +290,14 @@ export default function App() {
         <AdminView 
           onSwitchToPublic={() => setView('public')} 
           onToast={showToast} 
-          onUpdateEntrepriseConfig={(newCfg: any) => setEntrepriseConfig(newCfg)}
+          onUpdateEntrepriseConfig={async (newCfg: any) => {
+            setEntrepriseConfig(newCfg);
+            // Reload depuis l'API pour sûr avoir les données à jour (logo inclus)
+            try {
+              const fresh = await apiService.getEntrepriseConfig();
+              setEntrepriseConfig(fresh);
+            } catch {}
+          }}
         />
       )}
 

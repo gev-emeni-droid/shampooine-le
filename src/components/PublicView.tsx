@@ -218,8 +218,8 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
             {entrepriseConfig?.logo_url ? (
               <img 
                 src={entrepriseConfig.logo_url} 
-                alt="Logo" 
-                className="h-10 w-10 object-contain rounded-xl shadow-md border border-slate-100" 
+                alt={entrepriseConfig.nom_entreprise || 'Logo'} 
+                className="h-12 w-12 object-contain rounded-xl shadow-md border border-slate-100 bg-white p-0.5" 
                 referrerPolicy="no-referrer"
               />
             ) : (

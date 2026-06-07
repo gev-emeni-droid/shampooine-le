@@ -3909,13 +3909,27 @@ export default {
                             setIsDraggingLogo(false);
                             const file = e.dataTransfer.files?.[0];
                             if (file) {
-                              const reader = new FileReader();
-                              reader.onload = (uploadEvent) => {
-                                const base64 = uploadEvent.target?.result as string;
+                              const img = new Image();
+                              const objectUrl = URL.createObjectURL(file);
+                              img.onload = () => {
+                                const MAX = 400;
+                                let w = img.width, h = img.height;
+                                if (w > MAX || h > MAX) {
+                                  if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+                                  else { w = Math.round(w * MAX / h); h = MAX; }
+                                }
+                                const canvas = document.createElement('canvas');
+                                canvas.width = w; canvas.height = h;
+                                const ctx = canvas.getContext('2d')!;
+                                ctx.imageSmoothingEnabled = true;
+                                ctx.imageSmoothingQuality = 'high';
+                                ctx.drawImage(img, 0, 0, w, h);
+                                const base64 = canvas.toDataURL('image/png');
+                                URL.revokeObjectURL(objectUrl);
                                 setDraftConfig({ ...draftConfig, logo_url: base64 });
-                                onToast("Logo importé avec succès !", "success");
+                                onToast("✅ Logo importé et optimisé !", "success");
                               };
-                              reader.readAsDataURL(file);
+                              img.src = objectUrl;
                             }
                           }}
                           onClick={() => {
@@ -3931,13 +3945,27 @@ export default {
                             onChange={e => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const reader = new FileReader();
-                                reader.onload = (uploadEvent) => {
-                                  const base64 = uploadEvent.target?.result as string;
+                                const img = new Image();
+                                const objectUrl = URL.createObjectURL(file);
+                                img.onload = () => {
+                                  const MAX = 400;
+                                  let w = img.width, h = img.height;
+                                  if (w > MAX || h > MAX) {
+                                    if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+                                    else { w = Math.round(w * MAX / h); h = MAX; }
+                                  }
+                                  const canvas = document.createElement('canvas');
+                                  canvas.width = w; canvas.height = h;
+                                  const ctx = canvas.getContext('2d')!;
+                                  ctx.imageSmoothingEnabled = true;
+                                  ctx.imageSmoothingQuality = 'high';
+                                  ctx.drawImage(img, 0, 0, w, h);
+                                  const base64 = canvas.toDataURL('image/png');
+                                  URL.revokeObjectURL(objectUrl);
                                   setDraftConfig({ ...draftConfig, logo_url: base64 });
-                                  onToast("Logo importé avec succès !", "success");
+                                  onToast("✅ Logo importé et optimisé !", "success");
                                 };
-                                reader.readAsDataURL(file);
+                                img.src = objectUrl;
                               }
                             }}
                           />
