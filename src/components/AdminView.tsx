@@ -3243,7 +3243,7 @@ export default {
                 </button>
               </div>
 
-              {activeSettingsTab === 'general' ? (
+              {activeSettingsTab === 'general' && (
                 <>
                   <div className="bg-slate-50 p-6 rounded-3xl border border-dashed border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="space-y-1">
@@ -3689,7 +3689,9 @@ export default {
 
               </form>
                 </>
-              ) : (
+              )}
+
+              {activeSettingsTab === 'horaires' && (
                 <div className="space-y-6 animate-in fade-in duration-250">
                   {/* HORAIRES SUB-TAB VIEW */}
                   <form onSubmit={handleSaveSchedules} className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-6">
