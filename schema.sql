@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS avis_clients (
   appointment_id TEXT NOT NULL,
   note INTEGER NOT NULL CHECK (note BETWEEN 1 AND 5),
   commentaire TEXT NOT NULL,
-  afficher_nom INTEGER NOT NULL DEFAULT 1Check (afficher_nom IN (0,1)), -- 0 = pseudonyme/anonyme, 1 = public complet
+  afficher_nom INTEGER NOT NULL DEFAULT 1 CHECK (afficher_nom IN (0,1)), -- 0 = pseudonyme/anonyme, 1 = public complet
   approuve INTEGER NOT NULL DEFAULT 0 CHECK (approuve IN (0,1)), -- Modéré par l'artisan
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
@@ -180,18 +180,6 @@ CREATE TABLE IF NOT EXISTS avis_clients (
 -- ==========================================
 -- JEU DE DONNÉES DE DAMPARRAGE (SEED INITIAL)
 -- ==========================================
-
--- Configurations d'e-mails par défaut
-INSERT OR REPLACE INTO configurations_emails (id, flux_type, sujet, corps_message) VALUES
-('email_conf_1', 'appointment_confirmation', 'Confirmation de votre intervention de nettoyage - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nNous vous confirmons votre rendez-vous de nettoyage prévu le {DATE_RDV} à {HEURE_RDV}.\nDurée estimée de l''intervention : {DUREE_ESTIMEE} minutes.\nL''un de nos experts interviendra chez vous.\n\nCordialement,\nL''équipe Shampooine Le'),
-('email_conf_2', 'document_sending', 'Votre document de prestation - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services de nettoyage de textile.\n\nCordialement,\nL''équipe Shampooine Le'),
-('email_conf_3', 'employee_notification', 'Nouvelle intervention assignée - Shampooine Le', 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\nShampooine Le'),
-('email_conf_4', 'growth_feedback_request', 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s''est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL''équipe Shampooine Le');
-
--- Avis clients par défaut
-INSERT OR REPLACE INTO avis_clients (id, client_id, appointment_id, note, commentaire, afficher_nom, approuve) VALUES
-('av1', 'c1', 'appt1', 5, 'Résultat impressionnant sur mon canapé en lin ! Les taches de café incrustées depuis 1 an ont entièrement disparu. Karim est très pro.', 1, 1),
-('av2', 'c2', 'appt1', 4, 'Très bon service pour la moquette de notre chambre. Julie et Karim sont venus à l''heure et ont travaillé proprement.', 0, 1);
 
 -- Clients par défaut
 INSERT OR REPLACE INTO clients (id, first_name, last_name, email, phone, notes) VALUES
@@ -227,6 +215,19 @@ INSERT OR REPLACE INTO planning (id, document_id, title, date, start_time, durat
 INSERT OR REPLACE INTO planning_employes (planning_id, employe_id) VALUES
 ('appt1', 'emp1'),
 ('appt1', 'emp2');
+
+-- Configurations d'e-mails par défaut
+INSERT OR REPLACE INTO configurations_emails (id, flux_type, sujet, corps_message) VALUES
+('email_conf_1', 'appointment_confirmation', 'Confirmation de votre intervention de nettoyage - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nNous vous confirmons votre rendez-vous de nettoyage prévu le {DATE_RDV} à {HEURE_RDV}.\nDurée estimée de l''intervention : {DUREE_ESTIMEE} minutes.\nL''un de nos experts interviendra chez vous.\n\nCordialement,\nL''équipe Shampooine Le'),
+('email_conf_2', 'document_sending', 'Votre document de prestation - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services de nettoyage de textile.\n\nCordialement,\nL''équipe Shampooine Le'),
+('email_conf_3', 'employee_notification', 'Nouvelle intervention assignée - Shampooine Le', 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\nShampooine Le'),
+('email_conf_4', 'growth_feedback_request', 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s''est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL''équipe Shampooine Le');
+
+-- Avis clients par défaut
+INSERT OR REPLACE INTO avis_clients (id, client_id, appointment_id, note, commentaire, afficher_nom, approuve) VALUES
+('av1', 'c1', 'appt1', 5, 'Résultat impressionnant sur mon canapé en lin ! Les taches de café incrustées depuis 1 an ont entièrement disparu. Karim est très pro.', 1, 1),
+('av2', 'c2', 'appt1', 4, 'Très bon service pour la moquette de notre chambre. Julie et Karim sont venus à l''heure et ont travaillé proprement.', 0, 1);
+
 
 
 -- 10. Table de configuration de l'entreprise (Identité et Mentions Légales)
