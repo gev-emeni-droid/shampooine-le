@@ -325,7 +325,7 @@ export default function App() {
       {view === 'client_devis' && (
         <ClientDevisView 
           backToHome={() => setView('public')} 
-          onToast={showToast} 
+          onToast={(msg, type) => showToast(msg, type === 'error' ? 'info' : type)} 
           entrepriseConfig={entrepriseConfig}
         />
       )}
