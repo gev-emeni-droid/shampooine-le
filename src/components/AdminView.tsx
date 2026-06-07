@@ -479,7 +479,41 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       });
     });
     
-    return apptStyles;
+    return appptStyles;
+  };
+
+  const getAvailableVariables = (fluxType: string): string[] => {
+    switch (fluxType) {
+      case 'appointment_confirmation':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{DUREE_ESTIMEE}', '{NOM_ENTREPRISE}'];
+      case 'document_sending':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{TYPE_DOCUMENT}', '{NUMERO_DOCUMENT}', '{TOTAL_DOCUMENT}', '{LIEN_DOCUMENT}', '{NOM_ENTREPRISE}'];
+      case 'employee_notification':
+        return ['{NOM_EMPLOYE}', '{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{NOM_ENTREPRISE}'];
+      case 'growth_feedback_request':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{LIEN_AVIS}', '{NOM_ENTREPRISE}'];
+      default:
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{NOM_ENTREPRISE}'];
+    }
+  };
+
+  const handleInsertVariable = (variable: string) => {
+    const textarea = document.getElementById('email-body-editor') as HTMLTextAreaElement;
+    if (!textarea || !editingConfig) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = editingConfig.corps_template || '';
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    
+    const newText = before + variable + after;
+    setEditingConfig({ ...editingConfig, corps_template: newText });
+
+    setTimeout(() => {
+      textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = start + variable.length;
+    }, 10);
   };
 
   const [newApptForm, setNewApptForm] = useState({
@@ -3360,15 +3394,31 @@ export default {
                           />
                         </div>
 
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-slate-400 block uppercase">Corps du Message (Texte / Variables)</label>
-                          <textarea
-                            rows={10}
-                            value={editingConfig.corps_template || ''}
-                            onChange={(e) => setEditingConfig({ ...editingConfig, corps_template: e.target.value })}
-                            className="bg-slate-50 border border-slate-100 text-xs p-4 rounded-xl w-full focus:ring-1 focus:ring-sky-500 focus:bg-white outline-none font-mono leading-relaxed"
-                          />
-                        </div>
+                        <div className="space-y-1.5">
+                           <label className="text-[10px] font-bold text-slate-400 block uppercase">Corps du Message (Texte / Variables)</label>
+                           <textarea
+                             id="email-body-editor"
+                             rows={10}
+                             value={editingConfig.corps_template || ''}
+                             onChange={(e) => setEditingConfig({ ...editingConfig, corps_template: e.target.value })}
+                             className="bg-slate-50 border border-slate-100 text-xs p-4 rounded-xl w-full focus:ring-1 focus:ring-sky-500 focus:bg-white outline-none font-mono leading-relaxed shadow-inner"
+                           />
+                           <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-150 space-y-2 animate-in fade-in duration-100">
+                             <span className="text-[9px] uppercase font-black text-slate-400 block tracking-wider">Insérer une variable en un clic :</span>
+                             <div className="flex flex-wrap gap-1.5">
+                               {getAvailableVariables(editingConfig.flux_type).map(v => (
+                                 <button
+                                   key={v}
+                                   type="button"
+                                   onClick={() => handleInsertVariable(v)}
+                                   className="px-2.5 py-1 bg-white border border-slate-200 text-slate-700 hover:border-sky-500 hover:text-sky-600 rounded-lg text-[10px] font-mono font-bold cursor-pointer transition-colors shadow-sm active:scale-95"
+                                 >
+                                   {v}
+                                 </button>
+                               ))}
+                             </div>
+                           </div>
+                         </div>
 
                         <div className="pt-2 flex justify-end space-x-2">
                           <button

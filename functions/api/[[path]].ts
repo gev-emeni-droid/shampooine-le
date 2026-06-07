@@ -912,6 +912,45 @@ app.delete('/photos/:id', async (c) => {
 app.get('/emails/config', async (c) => {
   try {
     const { results } = await c.env.DB.prepare('SELECT * FROM configurations_emails').all();
+    if (results.length === 0) {
+      const defaultTemplates = [
+        {
+          id: 'email_conf_1',
+          flux_type: 'appointment_confirmation',
+          sujet: 'Confirmation de votre rendez-vous - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT}, nous vous confirmons votre rendez-vous le {DATE_RDV} à {HEURE_RDV} pour votre prestation.'
+        },
+        {
+          id: 'email_conf_2',
+          flux_type: 'document_sending',
+          sujet: 'Votre {TYPE_DOCUMENT} n°{NUMERO_DOCUMENT} - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT}, veuillez trouver ci-joint votre {TYPE_DOCUMENT}. Vous pouvez le consulter et le signer en ligne ici : {LIEN_DOCUMENT}'
+        },
+        {
+          id: 'email_conf_3',
+          flux_type: 'employee_notification',
+          sujet: 'Nouveau chantier assigné - {DATE_RDV}',
+          corps_message: 'Bonjour {NOM_EMPLOYE}, un nouveau chantier vous a été attribué le {DATE_RDV} à {HEURE_RDV} chez le client {NOM_CLIENT}.'
+        },
+        {
+          id: 'email_conf_4',
+          flux_type: 'growth_feedback_request',
+          sujet: 'Votre avis compte pour Shampooine Le !',
+          corps_message: 'Bonjour {PRENOM_CLIENT}, suite à notre prestation, merci de nous aider à nous améliorer en laissant votre avis ici : {LIEN_AVIS}'
+        }
+      ];
+
+      for (const t of defaultTemplates) {
+        await c.env.DB.prepare(
+          'INSERT OR IGNORE INTO configurations_emails (id, flux_type, sujet, corps_message) VALUES (?, ?, ?, ?)'
+        )
+          .bind(t.id, t.flux_type, t.sujet, t.corps_message)
+          .run();
+      }
+
+      const refreshed = await c.env.DB.prepare('SELECT * FROM configurations_emails').all();
+      return c.json(refreshed.results);
+    }
     return c.json(results);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);

@@ -964,28 +964,43 @@ export const apiService = {
   async getEmailConfigurations(): Promise<EmailConfiguration[]> {
     if (CLOUDFLARE_WORKER_URL) {
       const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/emails/config`);
-      return res.json();
+      const list = await res.json() as any[];
+      return list.map(item => ({
+        ...item,
+        sujet_template: item.sujet_template || item.sujet || '',
+        corps_template: item.corps_template || item.corps_message || ''
+      }));
     }
     await delay(150);
-    return getStored<EmailConfiguration[]>('email_configurations', []);
+    const list = getStored<any[]>('email_configurations', []);
+    return list.map(item => ({
+      ...item,
+      sujet_template: item.sujet_template || item.sujet || '',
+      corps_template: item.corps_template || item.corps_message || ''
+    }));
   },
 
   async saveEmailConfiguration(config: EmailConfiguration): Promise<EmailConfiguration> {
+    const payload = {
+      ...config,
+      sujet: config.sujet_template || config.sujet || '',
+      corps_message: config.corps_template || config.corps_message || ''
+    };
     if (CLOUDFLARE_WORKER_URL) {
       const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/emails/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify(payload)
       });
       return res.json();
     }
     await delay(200);
-    const configs = getStored<EmailConfiguration[]>('email_configurations', []);
+    const configs = getStored<any[]>('email_configurations', []);
     const idx = configs.findIndex(c => c.flux_type === config.flux_type);
     if (idx !== -1) {
-      configs[idx] = config;
+      configs[idx] = payload;
     } else {
-      configs.push(config);
+      configs.push(payload);
     }
     setStored('email_configurations', configs);
     return config;
@@ -1012,8 +1027,8 @@ export const apiService = {
     const corpConfig = getStored<any>('entreprise_config', null);
     const companyName = corpConfig?.nom_entreprise || "Shampooine Le";
     
-    let subject = config ? config.sujet : `Notification de ${companyName}`;
-    let body = config ? config.corps_message : "Bonjour, ...";
+    let subject = config ? (config.sujet_template || config.sujet || `Notification de ${companyName}`) : `Notification de ${companyName}`;
+    let body = config ? (config.corps_template || config.corps_message || "Bonjour, ...") : "Bonjour, ...";
 
     // Replace dynamic tags
     Object.entries(replacements).forEach(([key, val]) => {
