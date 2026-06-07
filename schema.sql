@@ -248,3 +248,22 @@ CREATE TABLE IF NOT EXISTS entreprise_config (
 INSERT OR REPLACE INTO entreprise_config (id, nom_entreprise, telephone, adresse_siege, horaires, siret, code_ape, tva_intracommunautaire, forme_juridique, capital_social, logo_url) VALUES
 ('default', 'Shampooine Le', '06 12 34 56 78', '42 Avenue de la Propreté, 75008 Paris', 'Lundi au Samedi : 8h00 - 19h00', '123 456 789 00021', '8121Z', 'FR 12 123456789', 'SARL', '10 000 €', 'https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&fit=crop&w=120&h=120&q=80');
 
+
+-- 11. Table des Prestations / Services
+CREATE TABLE IF NOT EXISTS prestations (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  name TEXT NOT NULL,
+  base_price REAL NOT NULL,
+  unit_label TEXT NOT NULL
+);
+
+INSERT OR REPLACE INTO prestations (id, category, name, base_price, unit_label) VALUES
+('p1', 'canape', 'Nettoyage complet canapé 2 places', 120.0, 'unité'),
+('p2', 'canape', 'Nettoyage complet canapé 3 places', 150.0, 'unité'),
+('p3', 'canape', 'Nettoyage complet canapé d''angle (4-5 places)', 210.0, 'unité'),
+('p4', 'moquette', 'Nettoyage en profondeur moquette / tapis', 12.0, 'm²'),
+('p5', 'fauteuil', 'Nettoyage complet fauteuil simple', 65.0, 'unité'),
+('p6', 'autre', 'Traitement anti-acariens / anti-odeurs protecteur', 25.0, 'unité');
+
+

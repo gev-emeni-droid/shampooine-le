@@ -1,0 +1,1062 @@
+import { Hono } from 'hono';
+import { handle } from 'hono/cloudflare-pages';
+
+type Bindings = {
+  DB: D1Database;
+  RESEND_API_KEY?: string;
+};
+
+const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
+
+// Helper to generate IDs if missing
+const uuid = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+// ==========================================
+// PRESTATIONS / SERVICES
+// ==========================================
+
+app.get('/prestations', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM prestations').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.put('/prestations/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    await c.env.DB.prepare(
+      'UPDATE prestations SET category = ?, name = ?, base_price = ?, unit_label = ? WHERE id = ?'
+    )
+      .bind(body.category, body.name, body.base_price, body.unit_label, id)
+      .run();
+    return c.json({ id, ...body });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// CLIENTS (CRM)
+// ==========================================
+
+app.get('/clients', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM clients ORDER BY created_at DESC').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get('/clients/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(id).first();
+    if (!client) return c.json({ error: 'Client non trouvé' }, 404);
+    return c.json(client);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/clients', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `c-${Date.now()}`;
+    
+    // Check if client with email or phone already exists
+    let existing = null;
+    if (body.email) {
+      existing = await c.env.DB.prepare('SELECT * FROM clients WHERE LOWER(email) = LOWER(?)').bind(body.email).first();
+    }
+    if (!existing && body.phone) {
+      existing = await c.env.DB.prepare('SELECT * FROM clients WHERE phone = ?').bind(body.phone).first();
+    }
+
+    if (existing) {
+      const updatedName = body.first_name || existing.first_name;
+      const updatedLastName = body.last_name || existing.last_name;
+      const updatedNotes = body.notes || existing.notes;
+      const updatedType = body.type_client || existing.type_client;
+      const updatedRaison = body.raison_sociale || existing.raison_sociale;
+      const updatedSiret = body.siret || existing.siret;
+      const updatedTva = body.tva_intracommunautaire || existing.tva_intracommunautaire;
+
+      await c.env.DB.prepare(
+        `UPDATE clients SET first_name = ?, last_name = ?, notes = ?, type_client = ?, 
+         raison_sociale = ?, siret = ?, tva_intracommunautaire = ? WHERE id = ?`
+      )
+        .bind(updatedName, updatedLastName, updatedNotes, updatedType, updatedRaison, updatedSiret, updatedTva, existing.id)
+        .run();
+
+      const fresh = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(existing.id).first();
+      return c.json(fresh);
+    }
+
+    // Insert new client
+    const newId = body.id || `c-${Date.now()}`;
+    await c.env.DB.prepare(
+      `INSERT INTO clients (id, first_name, last_name, email, phone, notes, type_client, raison_sociale, siret, tva_intracommunautaire) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        newId,
+        body.first_name,
+        body.last_name,
+        body.email,
+        body.phone,
+        body.notes || null,
+        body.type_client || 'particulier',
+        body.raison_sociale || null,
+        body.siret || null,
+        body.tva_intracommunautaire || null
+      )
+      .run();
+
+    const fresh = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(newId).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.put('/clients/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    await c.env.DB.prepare(
+      `UPDATE clients SET first_name = ?, last_name = ?, email = ?, phone = ?, notes = ?, 
+       type_client = ?, raison_sociale = ?, siret = ?, tva_intracommunautaire = ? WHERE id = ?`
+    )
+      .bind(
+        body.first_name,
+        body.last_name,
+        body.email,
+        body.phone,
+        body.notes,
+        body.type_client,
+        body.raison_sociale,
+        body.siret,
+        body.tva_intracommunautaire,
+        id
+      )
+      .run();
+    return c.json(body);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/clients/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM clients WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// CLIENT ADRESSES
+// ==========================================
+
+app.get('/clients/:clientId/adresses', async (c) => {
+  try {
+    const clientId = c.req.param('clientId');
+    const { results } = await c.env.DB.prepare('SELECT * FROM client_adresses WHERE client_id = ?').bind(clientId).all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get('/client_adresses', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM client_adresses').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/client_adresses', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `addr-${Date.now()}`;
+    await c.env.DB.prepare(
+      'INSERT OR REPLACE INTO client_adresses (id, client_id, label_adresse, adresse_complete) VALUES (?, ?, ?, ?)'
+    )
+      .bind(id, body.client_id, body.label_adresse, body.adresse_complete)
+      .run();
+    return c.json({ id, ...body });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/client_adresses/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM client_adresses WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// DOCUMENTS (DEVIS / FACTURES)
+// ==========================================
+
+app.get('/documents', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM documents ORDER BY created_at DESC').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get('/documents/:devisFactureId/lignes', async (c) => {
+  try {
+    const docId = c.req.param('devisFactureId');
+    const { results } = await c.env.DB.prepare('SELECT * FROM lignes_documents WHERE document_id = ?').bind(docId).all();
+    // Map db field document_id back to frontend field devis_facture_id
+    const mapped = results.map((r: any) => ({
+      id: r.id,
+      devis_facture_id: r.document_id,
+      prestation_name: r.prestation_name,
+      quantity: r.quantity,
+      unit_price: r.unit_price,
+      total_price: r.total_price
+    }));
+    return c.json(mapped);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/documents', async (c) => {
+  try {
+    const { doc, lines } = await c.req.json();
+    const docId = doc.id || `doc-${Date.now()}`;
+    const totalAmount = lines.reduce((acc: number, current: any) => acc + current.total_price, 0);
+
+    // Determine invoice number
+    let docNumber = doc.number;
+    if (!docNumber) {
+      const prefix = doc.type === 'devis' ? 'DEV' : 'FAC';
+      const year = new Date().getFullYear();
+      const count = await c.env.DB.prepare(
+        'SELECT COUNT(*) as count FROM documents WHERE type = ? AND date LIKE ?'
+      )
+        .bind(doc.type, `${year}%`)
+        .first<{ count: number }>();
+      const nextNum = (count?.count || 0) + 1;
+      docNumber = `${prefix}-${year}-${String(nextNum).padStart(3, '0')}`;
+    }
+
+    // Insert or replace document
+    await c.env.DB.prepare(
+      `INSERT OR REPLACE INTO documents (
+        id, client_id, type, number, status, date, due_date, total_amount, notes,
+        signature_client, date_signature, moyen_paiement, paiement_valide, date_paiement, signature_sur_place
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        docId,
+        doc.client_id,
+        doc.type,
+        docNumber,
+        doc.status,
+        doc.date,
+        doc.due_date,
+        totalAmount,
+        doc.notes || null,
+        doc.signature_client || null,
+        doc.date_signature || null,
+        doc.moyen_paiement || null,
+        doc.paiement_valide !== undefined ? (doc.paiement_valide ? 1 : 0) : 0,
+        doc.date_paiement || null,
+        doc.signature_sur_place !== undefined ? (doc.signature_sur_place ? 1 : 0) : 0
+      )
+      .run();
+
+    // Delete existing lines
+    await c.env.DB.prepare('DELETE FROM lignes_documents WHERE document_id = ?').bind(docId).run();
+
+    // Insert new lines
+    const batchStmts = lines.map((line: any, idx: number) => {
+      const lineId = line.id || `line-${docId}-${idx}`;
+      return c.env.DB.prepare(
+        'INSERT INTO lignes_documents (id, document_id, prestation_name, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(lineId, docId, line.prestation_name, line.quantity, line.unit_price, line.total_price);
+    });
+
+    if (batchStmts.length > 0) {
+      await c.env.DB.batch(batchStmts);
+    }
+
+    const fresh = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/documents/:devisId/convert', async (c) => {
+  try {
+    const devisId = c.req.param('devisId');
+    const devis = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ? AND type = "devis"').bind(devisId).first<any>();
+    if (!devis) return c.json({ error: 'Devis non trouvé' }, 404);
+
+    // Update original devis status
+    await c.env.DB.prepare('UPDATE documents SET status = "Facturé" WHERE id = ?').bind(devisId).run();
+
+    // Create new invoice
+    const factId = `doc-${Date.now()}`;
+    const year = new Date().getFullYear();
+    const count = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count FROM documents WHERE type = "facture" AND date LIKE ?'
+    )
+      .bind(`${year}%`)
+      .first<{ count: number }>();
+    const nextNum = (count?.count || 0) + 1;
+    const factNumber = `FAC-${year}-${String(nextNum).padStart(3, '0')}`;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dueStr = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    await c.env.DB.prepare(
+      `INSERT INTO documents (id, client_id, type, number, status, date, due_date, total_amount, notes) 
+       VALUES (?, ?, 'facture', ?, 'Envoyé au client', ?, ?, ?, ?)`
+    )
+      .bind(
+        factId,
+        devis.client_id,
+        factNumber,
+        todayStr,
+        dueStr,
+        devis.total_amount,
+        `Facture émise suite à l'acceptation du devis ${devis.number}.`
+      )
+      .run();
+
+    // Duplicate lines
+    const { results: devisLines } = await c.env.DB.prepare('SELECT * FROM lignes_documents WHERE document_id = ?').bind(devisId).all<any>();
+    const batchStmts = devisLines.map((line, idx) => {
+      const lineId = `line-${factId}-${idx}`;
+      return c.env.DB.prepare(
+        'INSERT INTO lignes_documents (id, document_id, prestation_name, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(lineId, factId, line.prestation_name, line.quantity, line.unit_price, line.total_price);
+    });
+
+    if (batchStmts.length > 0) {
+      await c.env.DB.batch(batchStmts);
+    }
+
+    const fresh = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(factId).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.patch('/documents/:id/status', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { status } = await c.req.json();
+    await c.env.DB.prepare('UPDATE documents SET status = ? WHERE id = ?').bind(status, id).run();
+    const fresh = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(id).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/documents/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    // SQLite Cascade will handle deleting lines if set up, but let's do it safely
+    await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(id).run();
+    await c.env.DB.prepare('DELETE FROM lignes_documents WHERE document_id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/documents/:devisId/sign', async (c) => {
+  try {
+    const devisId = c.req.param('devisId');
+    const { signature_client } = await c.req.json();
+    const dateSignature = new Date().toISOString();
+
+    await c.env.DB.prepare(
+      'UPDATE documents SET status = "Signé", signature_client = ?, date_signature = ? WHERE id = ?'
+    )
+      .bind(signature_client, dateSignature, devisId)
+      .run();
+
+    const fresh = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(devisId).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// EMPLOYES (TECHNICIENS)
+// ==========================================
+
+app.get('/employees', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM employes ORDER BY created_at DESC').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/employees', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `emp-${Date.now()}`;
+    await c.env.DB.prepare(
+      `INSERT OR REPLACE INTO employes (id, first_name, last_name, email, phone, status, color, username, password_hash, compte_actif) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        id,
+        body.first_name,
+        body.last_name,
+        body.email,
+        body.phone,
+        body.status || 'Actif',
+        body.color || '#3b82f6',
+        body.username || null,
+        body.password_hash || null,
+        body.compte_actif !== undefined ? (body.compte_actif ? 1 : 0) : 0
+      )
+      .run();
+    const fresh = await c.env.DB.prepare('SELECT * FROM employes WHERE id = ?').bind(id).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/employees/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM employes WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// PLANNING / APPOINTMENTS
+// ==========================================
+
+app.get('/appointments', async (c) => {
+  try {
+    const { results: appts } = await c.env.DB.prepare('SELECT * FROM planning').all<any>();
+    const { results: assignments } = await c.env.DB.prepare('SELECT * FROM planning_employes').all<any>();
+
+    // Merge employee assignments
+    const merged = appts.map((appt) => {
+      const employeeIds = assignments
+        .filter((a) => a.planning_id === appt.id)
+        .map((a) => a.employe_id);
+      return {
+        id: appt.id,
+        devis_facture_id: appt.document_id,
+        title: appt.title,
+        date: appt.date,
+        start_time: appt.start_time,
+        duration_minutes: appt.duration_minutes,
+        final_price: appt.final_price,
+        status: appt.status,
+        notes: appt.notes,
+        source_creation: appt.source_creation || 'admin',
+        assigned_employee_ids: employeeIds
+      };
+    });
+
+    return c.json(merged);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/appointments', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `rv-${Date.now()}`;
+
+    await c.env.DB.prepare(
+      `INSERT OR REPLACE INTO planning (id, document_id, title, date, start_time, duration_minutes, final_price, status, notes, source_creation) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        id,
+        body.devis_facture_id,
+        body.title,
+        body.date,
+        body.start_time,
+        body.duration_minutes,
+        body.final_price,
+        body.status,
+        body.notes || null,
+        body.source_creation || 'admin'
+      )
+      .run();
+
+    // Recreate employee assignments
+    await c.env.DB.prepare('DELETE FROM planning_employes WHERE planning_id = ?').bind(id).run();
+
+    if (body.assigned_employee_ids && Array.isArray(body.assigned_employee_ids)) {
+      const batchStmts = body.assigned_employee_ids.map((empId: string) => {
+        return c.env.DB.prepare(
+          'INSERT INTO planning_employes (planning_id, employe_id) VALUES (?, ?)'
+        ).bind(id, empId);
+      });
+      if (batchStmts.length > 0) {
+        await c.env.DB.batch(batchStmts);
+      }
+    }
+
+    const appt = await c.env.DB.prepare('SELECT * FROM planning WHERE id = ?').bind(id).first<any>();
+    const freshAssignments = await c.env.DB.prepare('SELECT employe_id FROM planning_employes WHERE planning_id = ?').bind(id).all<any>();
+    
+    return c.json({
+      id: appt.id,
+      devis_facture_id: appt.document_id,
+      title: appt.title,
+      date: appt.date,
+      start_time: appt.start_time,
+      duration_minutes: appt.duration_minutes,
+      final_price: appt.final_price,
+      status: appt.status,
+      notes: appt.notes,
+      source_creation: appt.source_creation || 'admin',
+      assigned_employee_ids: freshAssignments.results.map((r: any) => r.employe_id)
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/appointments/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM planning WHERE id = ?').bind(id).run();
+    await c.env.DB.prepare('DELETE FROM planning_employes WHERE planning_id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.put('/admin/planning/update', async (c) => {
+  try {
+    const { appointmentId, apptData, docId, docLines, docData } = await c.req.json();
+
+    // 1. Update appointment
+    if (apptData) {
+      const apptColumns = Object.keys(apptData)
+        .filter((k) => k !== 'assigned_employee_ids' && k !== 'id' && k !== 'devis_facture_id')
+        .map((k) => `${k === 'devis_facture_id' ? 'document_id' : k} = ?`)
+        .join(', ');
+
+      if (apptColumns) {
+        const apptValues = Object.keys(apptData)
+          .filter((k) => k !== 'assigned_employee_ids' && k !== 'id' && k !== 'devis_facture_id')
+          .map((k) => apptData[k]);
+        
+        await c.env.DB.prepare(
+          `UPDATE planning SET ${apptColumns} WHERE id = ?`
+        )
+          .bind(...apptValues, appointmentId)
+          .run();
+      }
+
+      // Handle employee assignment update if present
+      if (apptData.assigned_employee_ids && Array.isArray(apptData.assigned_employee_ids)) {
+        await c.env.DB.prepare('DELETE FROM planning_employes WHERE planning_id = ?').bind(appointmentId).run();
+        const assignmentsStmts = apptData.assigned_employee_ids.map((empId: string) => {
+          return c.env.DB.prepare(
+            'INSERT INTO planning_employes (planning_id, employe_id) VALUES (?, ?)'
+          ).bind(appointmentId, empId);
+        });
+        if (assignmentsStmts.length > 0) {
+          await c.env.DB.batch(assignmentsStmts);
+        }
+      }
+    }
+
+    // 2. Update document and lines
+    if (docId && docLines) {
+      const totalAmount = docLines.reduce((acc: number, current: any) => acc + current.total_price, 0);
+      
+      const docUpdates = docData ? { ...docData, total_amount: totalAmount } : { total_amount: totalAmount };
+      const docColumns = Object.keys(docUpdates).map((k) => `${k} = ?`).join(', ');
+      const docValues = Object.values(docUpdates);
+
+      await c.env.DB.prepare(`UPDATE documents SET ${docColumns} WHERE id = ?`)
+        .bind(...docValues, docId)
+        .run();
+
+      // Update lines
+      await c.env.DB.prepare('DELETE FROM lignes_documents WHERE document_id = ?').bind(docId).run();
+      const lineStmts = docLines.map((line: any, lIdx: number) => {
+        const lineId = line.id || `line-${docId}-${lIdx}`;
+        return c.env.DB.prepare(
+          'INSERT INTO lignes_documents (id, document_id, prestation_name, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)'
+        ).bind(lineId, docId, line.prestation_name, line.quantity, line.unit_price, line.total_price);
+      });
+
+      if (lineStmts.length > 0) {
+        await c.env.DB.batch(lineStmts);
+      }
+
+      // Update planning final price
+      await c.env.DB.prepare('UPDATE planning SET final_price = ? WHERE id = ?').bind(totalAmount, appointmentId).run();
+    }
+
+    // Fetch fresh values
+    const appt = await c.env.DB.prepare('SELECT * FROM planning WHERE id = ?').bind(appointmentId).first<any>();
+    const freshAssignments = await c.env.DB.prepare('SELECT employe_id FROM planning_employes WHERE planning_id = ?').bind(appointmentId).all<any>();
+    
+    let freshDoc = undefined;
+    if (docId) {
+      freshDoc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(docId).first();
+    }
+
+    return c.json({
+      appointment: {
+        id: appt.id,
+        devis_facture_id: appt.document_id,
+        title: appt.title,
+        date: appt.date,
+        start_time: appt.start_time,
+        duration_minutes: appt.duration_minutes,
+        final_price: appt.final_price,
+        status: appt.status,
+        notes: appt.notes,
+        source_creation: appt.source_creation || 'admin',
+        assigned_employee_ids: freshAssignments.results.map((r: any) => r.employe_id)
+      },
+      document: freshDoc
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// ENTREPRISE CONFIG
+// ==========================================
+
+app.get('/entreprise-config', async (c) => {
+  try {
+    const config = await c.env.DB.prepare('SELECT * FROM entreprise_config WHERE id = "default"').first<any>();
+    if (!config) {
+      return c.json({
+        id: 'default',
+        nom_entreprise: 'Shampooine Le',
+        telephone: '06 12 34 56 78',
+        adresse_siege: '42 Avenue de la Propreté, 75008 Paris',
+        horaires: 'Lundi au Samedi : 8h00 - 19h00',
+        siret: '123 456 789 00021',
+        code_ape: '8121Z',
+        tva_intracommunautaire: 'FR 12 123456789',
+        forme_juridique: 'SARL',
+        capital_social: '10 000 €',
+        logo_url: 'https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&fit=crop&w=120&h=120&q=80',
+        majorat_tarif_nuit_pct: 25,
+        plage_majoration_debut: '19:00',
+        plage_majoration_fin: '06:00',
+        activer_majoration: true
+      });
+    }
+
+    // Adapt sqlite columns to frontend camelCase or extra fields
+    return c.json({
+      ...config,
+      majorat_tarif_nuit_pct: config.majorat_tarif_nuit_pct !== undefined ? config.majorat_tarif_nuit_pct : 25,
+      plage_majoration_debut: config.plage_majoration_debut || '19:00',
+      plage_majoration_fin: config.plage_majoration_fin || '06:00',
+      activer_majoration: config.activer_majoration !== undefined ? (config.activer_majoration ? true : false) : true
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.put('/admin/entreprise-config', async (c) => {
+  try {
+    const body = await c.req.json();
+    await c.env.DB.prepare(
+      `INSERT OR REPLACE INTO entreprise_config (
+        id, nom_entreprise, telephone, adresse_siege, horaires, siret, code_ape, 
+        tva_intracommunautaire, forme_juridique, capital_social, logo_url
+      ) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        body.nom_entreprise,
+        body.telephone,
+        body.adresse_siege,
+        body.horaires,
+        body.siret,
+        body.code_ape,
+        body.tva_intracommunautaire,
+        body.forme_juridique,
+        body.capital_social,
+        body.logo_url
+      )
+      .run();
+    return c.json(body);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// PHOTOS (FICHIERS JOINTS)
+// ==========================================
+
+app.get('/photos', async (c) => {
+  try {
+    const devisFactureId = c.req.query('devis_facture_id');
+    let query = 'SELECT * FROM fichiers_joint';
+    let bindingVal = null;
+    if (devisFactureId) {
+      query += ' WHERE document_id = ?';
+      bindingVal = devisFactureId;
+    }
+
+    const stmt = bindingVal ? c.env.DB.prepare(query).bind(bindingVal) : c.env.DB.prepare(query);
+    const { results } = await stmt.all<any>();
+
+    // Map database fields to frontend fields
+    const mapped = results.map((r) => ({
+      id: r.id,
+      devis_facture_id: r.document_id,
+      photo_url: r.file_url,
+      caption: r.caption,
+      before_after: r.before_after
+    }));
+
+    return c.json(mapped);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/photos', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `photo-${Date.now()}`;
+    const fileName = body.file_name || `photo-${id}.jpg`;
+    
+    await c.env.DB.prepare(
+      'INSERT OR REPLACE INTO fichiers_joint (id, document_id, file_name, file_url, before_after, caption) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+      .bind(id, body.devis_facture_id, fileName, body.photo_url, body.before_after, body.caption || '')
+      .run();
+
+    return c.json({
+      id,
+      devis_facture_id: body.devis_facture_id,
+      photo_url: body.photo_url,
+      caption: body.caption,
+      before_after: body.before_after
+    });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/photos/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM fichiers_joint WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// EMAIL CONFIG & SENDING
+// ==========================================
+
+app.get('/emails/config', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM configurations_emails').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/emails/config', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `email-conf-${Date.now()}`;
+    await c.env.DB.prepare(
+      'INSERT OR REPLACE INTO configurations_emails (id, flux_type, sujet, corps_message) VALUES (?, ?, ?, ?)'
+    )
+      .bind(id, body.flux_type, body.sujet, body.corps_message)
+      .run();
+    return c.json(body);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/emails/send', async (c) => {
+  try {
+    const { recipientEmail, subject, body, fromName, fluxType, replacements } = await c.req.json();
+    const resendApiKey = c.env.RESEND_API_KEY;
+
+    let finalSubject = subject;
+    let finalBody = body;
+
+    // Handle automated template triggers if fluxType/replacements specified
+    if (fluxType && replacements) {
+      const config = await c.env.DB.prepare(
+        'SELECT * FROM configurations_emails WHERE flux_type = ?'
+      )
+        .bind(fluxType)
+        .first<any>();
+
+      const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
+      const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
+
+      finalSubject = config ? config.sujet : `Notification de ${companyName}`;
+      finalBody = config ? config.corps_message : 'Bonjour, ...';
+
+      // Substitutes
+      Object.entries(replacements).forEach(([key, val]) => {
+        const tag = `{${key}}`;
+        finalSubject = finalSubject.replace(new RegExp(tag, 'g'), String(val));
+        finalBody = finalBody.replace(new RegExp(tag, 'g'), String(val));
+      });
+
+      if (replacements.NOTE_VIREMENT) {
+        finalBody += '\n\n' + replacements.NOTE_VIREMENT;
+      }
+    }
+
+    if (!resendApiKey) {
+      console.warn('[Resend Cloudflare] RESEND_API_KEY is not set. Simulating mail send.');
+      return c.json({
+        success: true,
+        subject: finalSubject,
+        body: finalBody,
+        sentTo: recipientEmail,
+        simulated: true
+      });
+    }
+
+    const validatedFromName = fromName || 'Shampooine Le';
+    const from = `${validatedFromName} <onboarding@resend.dev>`;
+
+    const htmlBody = `
+      <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #f1f5f9; border-radius: 12px;">
+        <h2 style="color: #0ea5e9; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">${validatedFromName}</h2>
+        <div style="white-space: pre-wrap; line-height: 1.6; font-size: 14px;">
+          ${finalBody.replace(/\n/g, '<br/>')}
+        </div>
+        <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+        <p style="font-size: 10px; color: #94a3b8; text-align: center;">
+          Cet email a été envoyé automatiquement depuis votre espace ${validatedFromName}.
+        </p>
+      </div>
+    `;
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from,
+        to: [recipientEmail],
+        subject: finalSubject,
+        html: htmlBody
+      })
+    });
+
+    const data = await response.json() as any;
+
+    if (!response.ok) {
+      return c.json({ success: false, error: data.message || 'Error from Resend API' }, response.status);
+    }
+
+    return c.json({
+      success: true,
+      subject: finalSubject,
+      body: finalBody,
+      sentTo: recipientEmail,
+      resendData: data
+    });
+  } catch (e: any) {
+    return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// REVIEWS / AVIS CLIENTS
+// ==========================================
+
+app.get('/reviews', async (c) => {
+  try {
+    const onlyApproved = c.req.query('approved') === 'true';
+    let query = 'SELECT * FROM avis_clients';
+    if (onlyApproved) {
+      query += ' WHERE approuve = 1';
+    }
+    query += ' ORDER BY created_at DESC';
+
+    const { results } = await c.env.DB.prepare(query).all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/reviews', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = `review-${Date.now()}`;
+    
+    await c.env.DB.prepare(
+      `INSERT INTO avis_clients (id, client_id, appointment_id, note, commentaire, afficher_nom, approuve) 
+       VALUES (?, ?, ?, ?, ?, ?, 0)`
+    )
+      .bind(
+        id,
+        body.client_id,
+        body.appointment_id,
+        body.note,
+        body.commentaire,
+        body.afficher_nom !== undefined ? (body.afficher_nom ? 1 : 0) : 1
+      )
+      .run();
+
+    const fresh = await c.env.DB.prepare('SELECT * FROM avis_clients WHERE id = ?').bind(id).first();
+    return c.json(fresh);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/reviews/:id/approve', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { approved } = await c.req.json();
+    await c.env.DB.prepare('UPDATE avis_clients SET approuve = ? WHERE id = ?')
+      .bind(approved ? 1 : 0, id)
+      .run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/reviews/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM avis_clients WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// BUSINESS HOURS & HOLIDAYS
+// ==========================================
+
+app.get('/entreprise-horaires', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM entreprise_horaires ORDER BY jour_semaine ASC').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/entreprise-horaires', async (c) => {
+  try {
+    const list = await c.req.json();
+    const batchStmts = list.map((h: any) => {
+      return c.env.DB.prepare(
+        `INSERT OR REPLACE INTO entreprise_horaires (id, jour_semaine, heure_debut_matin, heure_fin_matin, heure_debut_apresmidi, heure_fin_apresmidi, est_ouvert) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        h.id,
+        h.jour_semaine,
+        h.heure_debut_matin,
+        h.heure_fin_matin,
+        h.heure_debut_apresmidi,
+        h.heure_fin_apresmidi,
+        h.est_ouvert ? 1 : 0
+      );
+    });
+
+    if (batchStmts.length > 0) {
+      await c.env.DB.batch(batchStmts);
+    }
+    return c.json(list);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.get('/entreprise-fermetures', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM entreprise_fermetures ORDER BY date ASC').all();
+    return c.json(results);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/entreprise-fermetures', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `f-${Date.now()}`;
+    await c.env.DB.prepare(
+      'INSERT OR REPLACE INTO entreprise_fermetures (id, date, description) VALUES (?, ?, ?)'
+    )
+      .bind(id, body.date, body.description)
+      .run();
+    return c.json({ id, ...body });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.delete('/entreprise-fermetures/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM entreprise_fermetures WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+export const onRequest = handle(app);

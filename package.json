@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "pages:dev": "wrangler pages dev --d1 DB --local",
+    "d1:init:local": "wrangler d1 execute shampooine-db --local --file=schema.sql",
+    "d1:init:prod": "wrangler d1 execute shampooine-db --remote --file=schema.sql",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
@@ -21,7 +24,8 @@
     "vite": "^6.2.3",
     "express": "^4.21.2",
     "dotenv": "^17.2.3",
-    "motion": "^12.23.24"
+    "motion": "^12.23.24",
+    "hono": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
