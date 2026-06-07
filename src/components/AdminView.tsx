@@ -3379,6 +3379,38 @@ export default {
           {activeTab === 'email_config' && (
             <div className="space-y-6 animate-in fade-in duration-250">
               
+              {/* SUB TABS NAVIGATION */}
+              <div className="flex border-b border-slate-200/80 mb-4 bg-white p-2 rounded-2xl shadow-sm gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('entreprise_config'); setActiveSettingsTab('general'); }}
+                  className={`px-4 py-2 text-[10px] uppercase font-black tracking-wider transition-all rounded-xl cursor-pointer text-slate-500 hover:bg-slate-100 hover:text-slate-800`}
+                >
+                  🏢 Identité &amp; Mon Compte
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('entreprise_config'); setActiveSettingsTab('horaires'); }}
+                  className={`px-4 py-2 text-[10px] uppercase font-black tracking-wider transition-all rounded-xl cursor-pointer text-slate-500 hover:bg-slate-100 hover:text-slate-800`}
+                >
+                  ⚙️ Gestion des Horaires &amp; Fermetures
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('entreprise_config'); setActiveSettingsTab('prestations'); }}
+                  className={`px-4 py-2 text-[10px] uppercase font-black tracking-wider transition-all rounded-xl cursor-pointer text-slate-500 hover:bg-slate-100 hover:text-slate-800`}
+                >
+                  🧼 Gestion des Prestations
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('email_config'); }}
+                  className={`px-4 py-2 text-[10px] uppercase font-black tracking-wider transition-all rounded-xl cursor-pointer bg-sky-500 text-white shadow-md shadow-sky-500/10`}
+                >
+                  📧 Modèles d'e-mails &amp; Automatisation
+                </button>
+              </div>
+              
               <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-sky-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden border border-slate-800">
                 <div className="absolute top-4 right-4 bg-sky-500/10 p-2.5 rounded-full border border-sky-500/20">
                   <Mail className="w-6 h-6 text-sky-400" />
@@ -3733,6 +3765,17 @@ export default {
                   }`}
                 >
                   🧼 Gestion des Prestations
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('email_config'); setSelectedClient(null); setViewingDoc(null); }}
+                  className={`px-4 py-2 text-[10px] uppercase font-black tracking-wider transition-all rounded-xl cursor-pointer ${
+                    activeTab === 'email_config'
+                      ? 'bg-sky-500 text-white shadow-md shadow-sky-500/10'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 animate-none'
+                  }`}
+                >
+                  📧 Modèles d'e-mails &amp; Automatisation
                 </button>
               </div>
 
