@@ -2359,7 +2359,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                             <img 
                               src={entrepriseConfig.logo_url} 
                               alt="Logo" 
-                              className="w-14 h-14 object-contain rounded-2xl border border-slate-100 shadow-sm"
+                              className="w-auto h-12 md:h-20 object-contain rounded-2xl border border-slate-100 shadow-sm logo-dynamique-net"
                               referrerPolicy="no-referrer"
                             />
                           ) : (
@@ -3962,7 +3962,7 @@ export default {
                               src={draftConfig.logo_url} 
                               alt="Logo d'entreprise" 
                               referrerPolicy="no-referrer"
-                              className="w-20 h-20 object-contain rounded-2xl bg-white p-2 border border-slate-200/60 shadow-md transform group-hover:scale-105 transition-transform duration-200"
+                              className="w-auto h-12 md:h-20 object-contain rounded-2xl bg-white p-2 border border-slate-200/60 shadow-md transform group-hover:scale-105 transition-transform duration-200 logo-dynamique-net"
                             />
                             <button
                               type="button"
@@ -4068,7 +4068,7 @@ export default {
                             src={draftConfig.logo_url} 
                             alt="Logo preview" 
                             referrerPolicy="no-referrer"
-                            className="w-9 h-9 object-contain rounded-lg border border-slate-100 bg-white p-1"
+                            className="w-auto h-12 md:h-20 object-contain rounded-lg border border-slate-100 bg-white p-1 logo-dynamique-net"
                           />
                         ) : (
                           <div className="bg-sky-500 text-white p-1.5 rounded-lg">

@@ -201,7 +201,7 @@ export default function App() {
                   <img
                     src={entrepriseConfig.logo_url}
                     alt={entrepriseConfig.nom_entreprise || 'Logo'}
-                    className="h-16 w-16 object-contain rounded-2xl shadow-lg border border-slate-700/50 bg-slate-800/40 p-1"
+                    className="w-auto h-12 md:h-20 object-contain rounded-2xl shadow-lg border border-slate-700/50 bg-slate-800/40 p-1 logo-dynamique-net"
                   />
                 </div>
               ) : (

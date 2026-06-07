@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+@layer utilities {
+  img.logo-dynamique-net {
+    image-rendering: -webkit-optimize-contrast; /* Safari / Chrome */
+    image-rendering: crisp-edges;               /* Firefox */
+    will-change: transform;                     /* Accélération GPU */
+    transform: translateZ(0);                   /* Force le rendu matériel */
+  }
+}

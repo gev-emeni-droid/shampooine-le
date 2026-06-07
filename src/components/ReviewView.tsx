@@ -118,7 +118,7 @@ export default function ReviewView({ onBackToHome, onToast, entrepriseConfig: pr
             <img 
               src={corpConfig.logo_url} 
               alt="Logo" 
-              className="h-16 w-16 object-contain rounded-2xl shadow-lg border border-slate-100 flex-shrink-0 mb-1" 
+              className="w-auto h-12 md:h-20 object-contain rounded-2xl shadow-lg border border-slate-100 flex-shrink-0 mb-1 logo-dynamique-net" 
               referrerPolicy="no-referrer"
             />
           ) : (

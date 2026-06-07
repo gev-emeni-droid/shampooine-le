@@ -482,7 +482,7 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                 src={corpConfig.logo_url} 
                 alt="Logo entreprise" 
                 referrerPolicy="no-referrer"
-                className="w-10 h-10 object-contain rounded-xl bg-white p-1"
+                className="w-auto h-12 md:h-20 object-contain rounded-xl bg-white p-1 logo-dynamique-net"
               />
             ) : (
               <div className="p-2 bg-sky-500 text-white rounded-xl">
@@ -529,7 +529,7 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                     src={corpConfig.logo_url} 
                     alt="Logo" 
                     referrerPolicy="no-referrer"
-                    className="max-h-14 object-contain rounded-xl bg-white p-1 border border-slate-100"
+                    className="w-auto h-12 md:h-20 object-contain rounded-xl bg-white p-1 border border-slate-100 logo-dynamique-net"
                   />
                 ) : (
                   <div className="bg-sky-500 text-white p-2.5 rounded-xl inline-block">
