@@ -512,7 +512,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     switch (fluxType) {
       case 'appointment_confirmation':
         return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{DUREE_ESTIMEE}', '{NOM_ENTREPRISE}'];
-      case 'document_sending':
+      case 'devis_sending':
+      case 'facture_sending':
         return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{TYPE_DOCUMENT}', '{NUMERO_DOCUMENT}', '{TOTAL_DOCUMENT}', '{LIEN_DOCUMENT}', '{NOM_ENTREPRISE}'];
       case 'employee_notification':
         return ['{NOM_EMPLOYE}', '{IDENT_CONNEXION}', '{PASS_CONNEXION}', '{LIEN_CONNEXION}', '{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{NOM_ENTREPRISE}'];
@@ -875,7 +876,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
           LIEN_AVIS: feedbackLink
         };
 
-        const resInvoice = await apiService.sendAutomatedEmail('document_sending', replacements, client.email);
+        const resInvoice = await apiService.sendAutomatedEmail('facture_sending', replacements, client.email);
         const resFeedback = await apiService.sendAutomatedEmail('growth_feedback_request', replacements, client.email);
 
         setSelectedSentEmailsReport({
@@ -964,7 +965,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
           NOTE_VIREMENT: bankTransferNotes ? `📌 CONSIGNE OBLIGATOIRE POUR TRANSFERT : ${bankTransferNotes}` : ""
         };
 
-        const resInvoice = await apiService.sendAutomatedEmail('document_sending', replacements, client.email);
+        const resInvoice = await apiService.sendAutomatedEmail('facture_sending', replacements, client.email);
         const resFeedback = await apiService.sendAutomatedEmail('growth_feedback_request', replacements, client.email);
 
         setSelectedSentEmailsReport({
@@ -1051,7 +1052,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
           LIEN_AVIS: feedbackLink
         };
 
-        const resInvoice = await apiService.sendAutomatedEmail('document_sending', replacements, client.email);
+        const resInvoice = await apiService.sendAutomatedEmail('facture_sending', replacements, client.email);
         const resFeedback = await apiService.sendAutomatedEmail('growth_feedback_request', replacements, client.email);
 
         setSelectedSentEmailsReport({
@@ -3460,8 +3461,11 @@ export default {
                         case 'appointment_confirmation':
                           flowLabel = "1. Confirmation de Rendez-vous";
                           break;
-                        case 'document_sending':
-                          flowLabel = "2. Envoi de Devis / Facture";
+                        case 'devis_sending':
+                          flowLabel = "2. Envoi de Devis";
+                          break;
+                        case 'facture_sending':
+                          flowLabel = "2b. Envoi de Facture";
                           break;
                         case 'employee_notification':
                           flowLabel = "3. Assignation & Rappel Employé";

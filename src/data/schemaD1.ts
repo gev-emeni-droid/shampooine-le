@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS planning_employes (
 -- 8. Table des Configurations d'e-mails (flux emails automatiques)
 CREATE TABLE IF NOT EXISTS configurations_emails (
   id TEXT PRIMARY KEY,
-  flux_type TEXT UNIQUE NOT NULL CHECK (flux_type IN ('appointment_confirmation', 'document_sending', 'employee_notification', 'growth_feedback_request')),
+  flux_type TEXT UNIQUE NOT NULL CHECK (flux_type IN ('appointment_confirmation', 'devis_sending', 'facture_sending', 'employee_notification', 'growth_feedback_request')),
   sujet TEXT NOT NULL,
   corps_message TEXT NOT NULL
 );

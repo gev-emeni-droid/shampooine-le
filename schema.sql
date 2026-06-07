@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS planning_employes (
 -- 8. Table des Configurations d'e-mails (flux emails automatiques)
 CREATE TABLE IF NOT EXISTS configurations_emails (
   id TEXT PRIMARY KEY,
-  flux_type TEXT UNIQUE NOT NULL CHECK (flux_type IN ('appointment_confirmation', 'document_sending', 'employee_notification', 'growth_feedback_request')),
+  flux_type TEXT UNIQUE NOT NULL CHECK (flux_type IN ('appointment_confirmation', 'devis_sending', 'facture_sending', 'employee_notification', 'growth_feedback_request')),
   sujet TEXT NOT NULL,
   corps_message TEXT NOT NULL
 );
@@ -221,7 +221,8 @@ INSERT OR REPLACE INTO planning_employes (planning_id, employe_id) VALUES
 -- Configurations d'e-mails par défaut
 INSERT OR REPLACE INTO configurations_emails (id, flux_type, sujet, corps_message) VALUES
 ('email_conf_1', 'appointment_confirmation', 'Confirmation de votre intervention de nettoyage - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nNous vous confirmons votre rendez-vous de nettoyage prévu le {DATE_RDV} à {HEURE_RDV}.\nDurée estimée de l''intervention : {DUREE_ESTIMEE} minutes.\nL''un de nos experts interviendra chez vous.\n\nCordialement,\nL''équipe Shampooine Le'),
-('email_conf_2', 'document_sending', 'Votre document de prestation - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services de nettoyage de textile.\n\nCordialement,\nL''équipe Shampooine Le'),
+('email_conf_2', 'devis_sending', 'Votre devis de prestation - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nCordialement,\nL''équipe Shampooine Le'),
+('email_conf_5', 'facture_sending', 'Votre facture de prestation - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre facture concernant nos services de nettoyage de textile.\n\nCordialement,\nL''équipe Shampooine Le'),
 ('email_conf_3', 'employee_notification', 'Nouvelle intervention assignée - Shampooine Le', 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\nShampooine Le'),
 ('email_conf_4', 'growth_feedback_request', 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s''est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL''équipe Shampooine Le');
 

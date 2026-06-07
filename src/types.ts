@@ -142,7 +142,7 @@ export interface ClientWithHistory extends Client {
 
 export interface EmailConfiguration {
   id: string;
-  flux_type: 'appointment_confirmation' | 'document_sending' | 'employee_notification' | 'growth_feedback_request';
+  flux_type: 'appointment_confirmation' | 'devis_sending' | 'facture_sending' | 'employee_notification' | 'growth_feedback_request';
   sujet: string;
   corps_message: string;
 }

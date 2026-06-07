@@ -931,26 +931,32 @@ app.get('/emails/config', async (c) => {
         {
           id: 'email_conf_1',
           flux_type: 'appointment_confirmation',
-          sujet: 'Confirmation de votre rendez-vous - Shampooine Le',
-          corps_message: 'Bonjour {PRENOM_CLIENT}, nous vous confirmons votre rendez-vous le {DATE_RDV} à {HEURE_RDV} pour votre prestation.'
+          sujet: 'Confirmation de votre intervention de nettoyage - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nNous vous confirmons votre rendez-vous de nettoyage prévu le {DATE_RDV} à {HEURE_RDV}.\nDurée estimée de l\'intervention : {DUREE_ESTIMEE} minutes.\nL\'un de nos experts interviendra chez vous.\n\nCordialement,\nL\'équipe Shampooine Le'
         },
         {
           id: 'email_conf_2',
-          flux_type: 'document_sending',
-          sujet: 'Votre {TYPE_DOCUMENT} n°{NUMERO_DOCUMENT} - Shampooine Le',
-          corps_message: 'Bonjour {PRENOM_CLIENT}, veuillez trouver ci-joint votre {TYPE_DOCUMENT}. Vous pouvez le consulter et le signer en ligne ici : {LIEN_DOCUMENT}'
+          flux_type: 'devis_sending',
+          sujet: 'Votre devis de prestation - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe Shampooine Le'
+        },
+        {
+          id: 'email_conf_5',
+          flux_type: 'facture_sending',
+          sujet: 'Votre facture de prestation - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre facture concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe Shampooine Le'
         },
         {
           id: 'email_conf_3',
           flux_type: 'employee_notification',
-          sujet: 'Nouveau chantier assigné - {DATE_RDV}',
-          corps_message: 'Bonjour {NOM_EMPLOYE}, un nouveau chantier vous a été attribué le {DATE_RDV} à {HEURE_RDV} chez le client {NOM_CLIENT}.'
+          sujet: 'Nouvelle intervention assignée - Shampooine Le',
+          corps_message: 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\nShampooine Le'
         },
         {
           id: 'email_conf_4',
           flux_type: 'growth_feedback_request',
-          sujet: 'Votre avis compte pour Shampooine Le !',
-          corps_message: 'Bonjour {PRENOM_CLIENT}, suite à notre prestation, merci de nous aider à nous améliorer en laissant votre avis ici : {LIEN_AVIS}'
+          sujet: 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s\'est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL\'équipe Shampooine Le'
         }
       ];
 
@@ -1127,20 +1133,23 @@ app.post('/admin/documents/renvoyer', async (c) => {
       return c.json({ error: `Email client invalide ou manquant: "${client.email}"` }, 400);
     }
 
-    // 3. Fetch email configuration for 'document_sending'
+    // 3. Fetch email configuration for devis or facture
+    const targetFlux = doc.type === 'devis' ? 'devis_sending' : 'facture_sending';
     const config = await c.env.DB.prepare(
       'SELECT * FROM configurations_emails WHERE flux_type = ?'
     )
-      .bind('document_sending')
+      .bind(targetFlux)
       .first<any>();
 
     const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
     const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
 
-    let subject = config ? config.sujet : `Votre document de prestation - ${companyName}`;
+    let subject = config ? config.sujet : (doc.type === 'devis' ? `Votre devis de prestation - ${companyName}` : `Votre facture de prestation - ${companyName}`);
     let body = config
       ? config.corps_message
-      : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}';
+      : (doc.type === 'devis'
+        ? 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}'
+        : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre facture concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}');
 
     // 4. Inject dynamic variables
     const reqOrigin = origin || new URL(c.req.url).origin;

@@ -99,9 +99,15 @@ export const initializeStorage = () => {
       },
       {
         id: 'email_conf_2',
-        flux_type: 'document_sending',
-        sujet: 'Votre document de prestation - Shampooine Le',
-        corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe Shampooine Le'
+        flux_type: 'devis_sending',
+        sujet: 'Votre devis de prestation - Shampooine Le',
+        corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe Shampooine Le'
+      },
+      {
+        id: 'email_conf_5',
+        flux_type: 'facture_sending',
+        sujet: 'Votre facture de prestation - Shampooine Le',
+        corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre facture concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe Shampooine Le'
       },
       {
         id: 'email_conf_3',
@@ -1280,7 +1286,7 @@ export const apiService = {
     // 2. Email confirmation with unique link to client:
     const schedulerLink = `${window.location.origin}${window.location.pathname}?devis_id=${d.id}&action=planifier`;
     await this.sendAutomatedEmail(
-      'document_sending',
+      'devis_sending',
       {
         PRENOM_CLIENT: client ? client.first_name : '',
         NOM_CLIENT: client ? client.last_name : '',
