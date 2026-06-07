@@ -515,7 +515,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       case 'document_sending':
         return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{TYPE_DOCUMENT}', '{NUMERO_DOCUMENT}', '{TOTAL_DOCUMENT}', '{LIEN_DOCUMENT}', '{NOM_ENTREPRISE}'];
       case 'employee_notification':
-        return ['{NOM_EMPLOYE}', '{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{NOM_ENTREPRISE}'];
+        return ['{NOM_EMPLOYE}', '{IDENT_CONNEXION}', '{PASS_CONNEXION}', '{LIEN_CONNEXION}', '{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{NOM_ENTREPRISE}'];
       case 'growth_feedback_request':
         return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{LIEN_AVIS}', '{NOM_ENTREPRISE}'];
       default:
@@ -3498,7 +3498,10 @@ export default {
                       <li><strong className="text-sky-600">{`{DATE_RDV}`}</strong> : Date d'intervention</li>
                       <li><strong className="text-sky-600">{`{HEURE_RDV}`}</strong> : Heure de début</li>
                       <li><strong className="text-sky-600">{`{DUREE_ESTIMEE}`}</strong> : Durée</li>
-                      <li><strong className="text-sky-600">{`{NOM_EMPLOYE}`}</strong> : Équipe assignée</li>
+                      <li><strong className="text-sky-600">{`{NOM_EMPLOYE}`}</strong> : Équipe assignée / Nom employé</li>
+                      <li><strong className="text-sky-600">{`{IDENT_CONNEXION}`}</strong> : Identifiant employé</li>
+                      <li><strong className="text-sky-600">{`{PASS_CONNEXION}`}</strong> : Mot de passe employé</li>
+                      <li><strong className="text-sky-600">{`{LIEN_CONNEXION}`}</strong> : Lien de connexion employé</li>
                       <li><strong className="text-sky-600">{`{LIEN_AVIS}`}</strong> : Lien d'avis clients</li>
                     </ul>
                   </div>
