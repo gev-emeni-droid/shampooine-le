@@ -327,6 +327,20 @@ export const apiService = {
     };
     clients.push(newClient);
     setStored('clients', clients);
+
+    const addressStr = (clientData as any).adresse_complete || (clientData as any).adresse;
+    if (addressStr && addressStr.trim()) {
+      const allAddresses = getStored<ClientAdresse[]>('client_adresses', []);
+      const addrId = `ca-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      allAddresses.push({
+        id: addrId,
+        client_id: newClient.id,
+        label_adresse: 'Principale',
+        adresse_complete: addressStr.trim()
+      });
+      setStored('client_adresses', allAddresses);
+    }
+
     return newClient;
   },
 

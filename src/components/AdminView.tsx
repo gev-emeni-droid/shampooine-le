@@ -134,7 +134,20 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   // Modal / Detail drawer states
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [newClientModal, setNewClientModal] = useState(false);
-  const [newClientForm, setNewClientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', notes: '' });
+  const [newClientForm, setNewClientForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    notes: '',
+    type_client: 'particulier' as 'particulier' | 'professionnel',
+    raison_sociale: '',
+    siret: '',
+    tva_intracommunautaire: '',
+    adresse_complete: ''
+  });
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false);
   
   // Quote Builder States
   const [viewingDoc, setViewingDoc] = useState<DevisFacture | null>(null);
@@ -387,17 +400,51 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   }, []);
 
   // CRM: Create Client
+  const handleAddressSearch = async (query: string) => {
+    setNewClientForm(prev => ({ ...prev, adresse_complete: query }));
+    if (query.trim().length < 4) {
+      setAddressSuggestions([]);
+      return;
+    }
+    try {
+      setIsSearchingAddress(true);
+      const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=5`);
+      if (res.ok) {
+        const data = await res.json();
+        const features = data.features || [];
+        const labels = features.map((f: any) => f.properties.label);
+        setAddressSuggestions(labels);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSearchingAddress(false);
+    }
+  };
+
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClientForm.first_name || !newClientForm.last_name || !newClientForm.email || !newClientForm.phone) {
-      onToast("Veuillez renseigner tous les champs obligatoires.", "info");
+    if (!newClientForm.last_name || !newClientForm.phone) {
+      onToast("Le Nom et le Téléphone sont obligatoires pour créer un client.", "info");
       return;
     }
     try {
       await apiService.createOrUpdateClient(newClientForm);
       onToast(`Client ${newClientForm.first_name} ${newClientForm.last_name} enregistré avec succès !`, "success");
       setNewClientModal(false);
-      setNewClientForm({ first_name: '', last_name: '', email: '', phone: '', notes: '' });
+      setNewClientForm({
+        first_name: '',
+        last_name: '',
+        email: '',
+        phone: '',
+        notes: '',
+        type_client: 'particulier',
+        raison_sociale: '',
+        siret: '',
+        tva_intracommunautaire: '',
+        adresse_complete: ''
+      });
+      setAddressSuggestions([]);
       loadAllDbData();
     } catch (err) {
       console.error(err);
@@ -4889,13 +4936,115 @@ export default {
               </button>
             </div>
 
-            <form onSubmit={handleCreateClient} className="p-6 space-y-4">
+            <form onSubmit={handleCreateClient} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Type de client (Particulier/Professionnel) */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Type de client</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewClientForm({ ...newClientForm, type_client: 'particulier' })}
+                    className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
+                      newClientForm.type_client === 'particulier'
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Particulier
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewClientForm({ ...newClientForm, type_client: 'professionnel' })}
+                    className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
+                      newClientForm.type_client === 'professionnel'
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Professionnel
+                  </button>
+                </div>
+              </div>
+
+              {/* B2B Info Box */}
+              {newClientForm.type_client === 'professionnel' && (
+                <div className="bg-slate-50/60 p-3.5 rounded-2xl border border-slate-100 space-y-2.5 animate-in slide-in-from-top-1 duration-150">
+                  <span className="text-[9px] uppercase font-black text-sky-500 block">Informations B2B (Optionnelles)</span>
+                  
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Raison Sociale</span>
+                    <input 
+                      type="text"
+                      value={newClientForm.raison_sociale}
+                      onChange={e => setNewClientForm({ ...newClientForm, raison_sociale: e.target.value })}
+                      placeholder="Ex: Nettoyage SARL"
+                      className="w-full bg-white border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">SIRET</span>
+                      <input 
+                        type="text"
+                        value={newClientForm.siret}
+                        onChange={e => setNewClientForm({ ...newClientForm, siret: e.target.value })}
+                        placeholder="123 456 789 00012"
+                        className="w-full bg-white border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">TVA Intra.</span>
+                      <input 
+                        type="text"
+                        value={newClientForm.tva_intracommunautaire}
+                        onChange={e => setNewClientForm({ ...newClientForm, tva_intracommunautaire: e.target.value })}
+                        placeholder="FR 12 123456789"
+                        className="w-full bg-white border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Adresse d'intervention */}
+              <div className="space-y-1 relative">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Adresse d'intervention (Optionnelle)</span>
+                <input 
+                  type="text"
+                  value={newClientForm.adresse_complete}
+                  onChange={e => handleAddressSearch(e.target.value)}
+                  placeholder="Rechercher une adresse..."
+                  className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                />
+                {isSearchingAddress && (
+                  <span className="absolute right-3.5 top-8 text-[10px] text-slate-400 animate-pulse">Recherche...</span>
+                )}
+                {addressSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 bg-white border border-slate-100 rounded-xl mt-1 shadow-xl max-h-48 overflow-y-auto">
+                    {addressSuggestions.map((label, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setNewClientForm({ ...newClientForm, adresse_complete: label });
+                          setAddressSuggestions([]);
+                        }}
+                        className="w-full text-left px-3.5 py-2 text-xs hover:bg-sky-50 text-slate-700 cursor-pointer border-b border-slate-50 last:border-b-0"
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Prénom & Nom */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Prénom *</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Prénom (Optionnel)</span>
                   <input 
                     type="text"
-                    required
                     value={newClientForm.first_name}
                     onChange={e => setNewClientForm({ ...newClientForm, first_name: e.target.value })}
                     placeholder="Jean"
@@ -4915,30 +5064,32 @@ export default {
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Email *</span>
-                <input 
-                  type="email"
-                  required
-                  value={newClientForm.email}
-                  onChange={e => setNewClientForm({ ...newClientForm, email: e.target.value })}
-                  placeholder="jean.dupont@gmail.com"
-                  className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
-                />
+              {/* Portable & Email */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Portable *</span>
+                  <input 
+                    type="text"
+                    required
+                    value={newClientForm.phone}
+                    onChange={e => setNewClientForm({ ...newClientForm, phone: e.target.value })}
+                    placeholder="06 12 34 56 78"
+                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Email (Optionnel)</span>
+                  <input 
+                    type="email"
+                    value={newClientForm.email}
+                    onChange={e => setNewClientForm({ ...newClientForm, email: e.target.value })}
+                    placeholder="jean@gmail.com"
+                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                  />
+                </div>
               </div>
 
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Portable *</span>
-                <input 
-                  type="text"
-                  required
-                  value={newClientForm.phone}
-                  onChange={e => setNewClientForm({ ...newClientForm, phone: e.target.value })}
-                  placeholder="06 12 34 56 78"
-                  className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
-                />
-              </div>
-
+              {/* Notes */}
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Spécificités Textiles (Note de Suivi)</span>
                 <textarea 

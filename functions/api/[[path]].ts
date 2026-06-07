@@ -196,7 +196,7 @@ app.post('/clients', async (c) => {
         newId,
         body.first_name,
         body.last_name,
-        body.email,
+        body.email || null,
         body.phone,
         body.notes || null,
         body.type_client || 'particulier',
@@ -205,6 +205,18 @@ app.post('/clients', async (c) => {
         body.tva_intracommunautaire || null
       )
       .run();
+
+    // Insert address into client_adresses if provided
+    const addressStr = body.adresse_complete || body.adresse;
+    if (addressStr && addressStr.trim()) {
+      const addrId = `ca-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      await c.env.DB.prepare(
+        `INSERT INTO client_adresses (id, client_id, label_adresse, adresse_complete) 
+         VALUES (?, ?, ?, ?)`
+      )
+        .bind(addrId, newId, 'Principale', addressStr.trim())
+        .run();
+    }
 
     const fresh = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(newId).first();
     return c.json(fresh);
