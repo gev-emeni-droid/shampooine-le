@@ -5,5 +5,5 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "shampooine-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "16a26a6c-e8e7-4ec0-bc4b-4e8de98b6622"
 migrations_dir = "migrations"
