@@ -1,0 +1,6 @@
+{
+  "name": "Shampooine Le",
+  "description": "Site vitrine haut de gamme et CRM administrateur complet pour l'entretien professionnel de canapés et moquettes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
