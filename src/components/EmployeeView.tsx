@@ -74,6 +74,18 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
     }
   };
 
+  // Parse address from notes if it exists
+  const getInterventionAddress = (notes?: string) => {
+    if (!notes) return null;
+    const match = notes.match(/Adresse d'intervention\s*:\s*([^\n]+)/i);
+    return match ? match[1].trim() : null;
+  };
+
+  const getCleanNotes = (notes?: string) => {
+    if (!notes) return "";
+    return notes.replace(/Adresse d'intervention\s*:\s*[^\n]+\n?/i, "").trim();
+  };
+
   // Helper to determine if a date string falls in the current week (Monday - Sunday)
   const isDateInCurrentWeek = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -384,11 +396,28 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
                           );
                         })()}
 
+                        {/* Adresse d'intervention */}
+                        {(() => {
+                          const addr = getInterventionAddress(selectedAppt.notes);
+                          return (
+                            <div className="space-y-3">
+                              <h5 className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Adresse d'intervention</h5>
+                              <div className="bg-slate-955 p-3.5 rounded-2xl border border-slate-800 flex items-start space-x-2.5 text-xs text-slate-300">
+                                <MapPin className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                                <div>
+                                  <p className="font-semibold text-white">Chantier d'intervention</p>
+                                  <p className="mt-1 text-slate-400 leading-normal">{addr || "Utiliser l'adresse principale du client"}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Internal memo notes */}
                         <div className="space-y-2">
                           <label className="text-[10px] uppercase font-bold text-slate-400 tracking-widest">Mémos &amp; Consignes</label>
                           <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/80 text-xs text-slate-300 italic leading-relaxed">
-                            {selectedAppt.notes ? selectedAppt.notes : "Aucune consigne interne n'a été rédigée."}
+                            {getCleanNotes(selectedAppt.notes) ? getCleanNotes(selectedAppt.notes) : "Aucune consigne interne n'a été rédigée."}
                           </div>
                         </div>
 
