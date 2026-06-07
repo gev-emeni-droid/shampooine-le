@@ -176,6 +176,26 @@ export const apiService = {
     return getStored<Prestation[]>('prestations', []);
   },
 
+  async createPrestation(prestation: Omit<Prestation, 'id'>): Promise<Prestation> {
+    if (CLOUDFLARE_WORKER_URL) {
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/prestations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(prestation),
+      });
+      return res.json();
+    }
+    await delay(250);
+    const list = getStored<Prestation[]>('prestations', []);
+    const newPrestation: Prestation = {
+      ...prestation,
+      id: `p-${Date.now()}`
+    };
+    list.push(newPrestation);
+    setStored('prestations', list);
+    return newPrestation;
+  },
+
   async updatePrestation(prestation: Prestation): Promise<Prestation> {
     if (CLOUDFLARE_WORKER_URL) {
       const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/prestations/${prestation.id}`, {
@@ -193,6 +213,50 @@ export const apiService = {
       setStored('prestations', list);
     }
     return prestation;
+  },
+
+  async deletePrestation(id: string): Promise<boolean> {
+    if (CLOUDFLARE_WORKER_URL) {
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/prestations/${id}`, {
+        method: 'DELETE'
+      });
+      return res.ok;
+    }
+    await delay(200);
+    const list = getStored<Prestation[]>('prestations', []);
+    const filtered = list.filter(p => p.id !== id);
+    setStored('prestations', filtered);
+    return true;
+  },
+
+  async createDemandeDevis(demande: Omit<DemandeDevis, 'id' | 'created_at'>): Promise<DemandeDevis> {
+    if (CLOUDFLARE_WORKER_URL) {
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/demandes-devis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(demande)
+      });
+      return res.json();
+    }
+    await delay(250);
+    const list = getStored<DemandeDevis[]>('demandes_devis', []);
+    const newDemande: DemandeDevis = {
+      ...demande,
+      id: `req-${Date.now()}`,
+      created_at: new Date().toISOString()
+    };
+    list.push(newDemande);
+    setStored('demandes_devis', list);
+    return newDemande;
+  },
+
+  async getDemandesDevis(): Promise<DemandeDevis[]> {
+    if (CLOUDFLARE_WORKER_URL) {
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/demandes-devis`);
+      return res.json();
+    }
+    await delay(250);
+    return getStored<DemandeDevis[]>('demandes_devis', []);
   },
 
   // ==========================================
@@ -1191,5 +1255,47 @@ export const apiService = {
     console.log(`[EMAIL TO CLIENT]: Félicitations ${clientName}, votre devis ${d.number} est signé ! Planifiez votre RDV ici : ${schedulerLink}`);
 
     return d;
+  },
+
+  async sendOrResendDocument(documentId: string): Promise<{ success: boolean; newStatus: DevisFacture['status']; sentTo: string; simulated?: boolean }> {
+    if (CLOUDFLARE_WORKER_URL) {
+      const res = await fetch(`${CLOUDFLARE_WORKER_URL}/api/admin/documents/renvoyer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId, origin: window.location.origin })
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Erreur lors de l\'envoi du document');
+      }
+      return res.json();
+    }
+
+    // Offline / LocalStorage Simulation Fallback
+    const docs = getStored<DevisFacture[]>('devis_factures', []);
+    const docIndex = docs.findIndex(d => d.id === documentId);
+    if (docIndex === -1) throw new Error('Document non trouvé');
+    const doc = docs[docIndex];
+
+    const clients = getStored<Client[]>('clients', []);
+    const client = clients.find(c => c.id === doc.client_id);
+    if (!client) throw new Error('Client non trouvé');
+
+    // Update status if it's currently Brouillon (or Facturé for invoice)
+    let newStatus = doc.status;
+    if (doc.status === 'Brouillon' || (doc.type === 'facture' && doc.status === 'Facturé')) {
+      newStatus = 'Envoyé au client';
+      doc.status = newStatus;
+      setStored('devis_factures', docs);
+    }
+
+    await delay(300);
+
+    return {
+      success: true,
+      newStatus,
+      sentTo: client.email,
+      simulated: true
+    };
   }
 };

@@ -255,16 +255,30 @@ CREATE TABLE IF NOT EXISTS prestations (
   id TEXT PRIMARY KEY,
   category TEXT NOT NULL,
   name TEXT NOT NULL,
-  base_price REAL NOT NULL,
-  unit_label TEXT NOT NULL
+  type_tarif TEXT DEFAULT 'fixe', -- 'fixe' ou 'm2'
+  prix_unitaire REAL NOT NULL,
+  activer_majoration_nuit INTEGER DEFAULT 1 -- 0 ou 1
 );
 
-INSERT OR REPLACE INTO prestations (id, category, name, base_price, unit_label) VALUES
-('p1', 'canape', 'Nettoyage complet canapé 2 places', 120.0, 'unité'),
-('p2', 'canape', 'Nettoyage complet canapé 3 places', 150.0, 'unité'),
-('p3', 'canape', 'Nettoyage complet canapé d''angle (4-5 places)', 210.0, 'unité'),
-('p4', 'moquette', 'Nettoyage en profondeur moquette / tapis', 12.0, 'm²'),
-('p5', 'fauteuil', 'Nettoyage complet fauteuil simple', 65.0, 'unité'),
-('p6', 'autre', 'Traitement anti-acariens / anti-odeurs protecteur', 25.0, 'unité');
+INSERT OR REPLACE INTO prestations (id, category, name, type_tarif, prix_unitaire, activer_majoration_nuit) VALUES
+('p1', 'canape', 'Nettoyage complet canapé 2 places', 'fixe', 120.0, 1),
+('p2', 'canape', 'Nettoyage complet canapé 3 places', 'fixe', 150.0, 1),
+('p3', 'canape', 'Nettoyage complet canapé d''angle (4-5 places)', 'fixe', 210.0, 1),
+('p4', 'moquette', 'Nettoyage en profondeur moquette / tapis', 'm2', 12.0, 1),
+('p5', 'fauteuil', 'Nettoyage complet fauteuil simple', 'fixe', 65.0, 1),
+('p6', 'autre', 'Traitement anti-acariens / anti-odeurs protecteur', 'fixe', 25.0, 1);
+
+-- 12. Table des Demandes de devis du site public
+CREATE TABLE IF NOT EXISTS demandes_devis (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  nombre_objets TEXT,
+  description_etat TEXT,
+  surface_dimensions TEXT,
+  demande_visite INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+);
+
 
 

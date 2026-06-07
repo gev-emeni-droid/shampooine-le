@@ -83,8 +83,25 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   const [entrepriseHoraires, setEntrepriseHoraires] = useState<EntrepriseHoraire[]>([]);
   const [entrepriseFermetures, setEntrepriseFermetures] = useState<EntrepriseFermeture[]>([]);
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'horaires'>('general');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'general' | 'horaires' | 'prestations'>('general');
   const [newClosureForm, setNewClosureForm] = useState({ date: '', description: '' });
+  
+  // Prestation management state variables
+  const [editingPrestation, setEditingPrestation] = useState<Prestation | null>(null);
+  const [showPrestationModal, setShowPrestationModal] = useState(false);
+  const [prestationForm, setPrestationForm] = useState({
+    category: 'canape' as Prestation['category'],
+    name: '',
+    type_tarif: 'fixe' as 'fixe' | 'm2',
+    prix_unitaire: 0,
+    activer_majoration_nuit: true
+  });
+
+  // Quote line composition state variables
+  const [lineComposeMode, setLineComposeMode] = useState<'catalogue' | 'libre'>('catalogue');
+  const [customLineName, setCustomLineName] = useState('');
+  const [customLinePrice, setCustomLinePrice] = useState(0);
+  const [customLineQty, setCustomLineQty] = useState(1);
 
   // App datasets
   const [clients, setClients] = useState<Client[]>([]);
@@ -121,6 +138,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   
   // Quote Builder States
   const [viewingDoc, setViewingDoc] = useState<DevisFacture | null>(null);
+  const [sendingDocId, setSendingDocId] = useState<string | null>(null);
   const [viewingLines, setViewingLines] = useState<LigneDocument[]>([]);
   const [viewingPhotos, setViewingPhotos] = useState<DocumentPhoto[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState('');
@@ -478,10 +496,31 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       onToast(`Statut mis à jour : ${status}`, "success");
       loadAllDbData();
       if (viewingDoc && viewingDoc.id === docId) {
-        setViewingDoc({ ...viewingDoc, status });
+        setViewingDoc({ ...viewingDoc, status: status });
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Send or Resend Document via Resend API
+  const handleSendOrResendDoc = async (doc: DevisFacture) => {
+    setSendingDocId(doc.id);
+    try {
+      const res = await apiService.sendOrResendDocument(doc.id);
+      
+      // Update local state if we are currently viewing this document
+      if (viewingDoc && viewingDoc.id === doc.id) {
+        setViewingDoc({ ...viewingDoc, status: res.newStatus });
+      }
+
+      onToast(`Le document ${doc.number} a été envoyé avec succès à ${res.sentTo} !`, "success");
+      loadAllDbData();
+    } catch (err: any) {
+      console.error(err);
+      onToast(err.message || "Erreur lors de l'envoi du document", "info");
+    } finally {
+      setSendingDocId(null);
     }
   };
 
@@ -791,27 +830,46 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   };
 
   const addLastMinutePrestation = () => {
-    if (!lastMinutePrestationId) {
-      onToast("Veuillez sélectionner une prestation.", "info");
-      return;
-    }
-    const found = prestations.find(p => p.id === lastMinutePrestationId);
-    if (found) {
-      const df = documents.find(d => d.id === editingAppt?.devis_facture_id);
-      const cl = df ? clients.find(c => c.id === df.client_id) : null;
-      const factor = cl?.type_client === 'professionnel' ? 1.25 : 1.0;
-      const finalPrice = found.base_price * factor;
+    if (lineComposeMode === 'catalogue') {
+      if (!lastMinutePrestationId) {
+        onToast("Veuillez sélectionner une prestation.", "info");
+        return;
+      }
+      const found = prestations.find(p => p.id === lastMinutePrestationId);
+      if (found) {
+        const df = documents.find(d => d.id === editingAppt?.devis_facture_id);
+        const cl = df ? clients.find(c => c.id === df.client_id) : null;
+        const factor = cl?.type_client === 'professionnel' ? 1.25 : 1.0;
+        const basePrice = found.prix_unitaire !== undefined ? found.prix_unitaire : found.base_price;
+        const finalPrice = basePrice * factor;
 
+        const newLine = {
+          prestation_name: `${found.name}${cl?.type_client === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
+          quantity: lastMinuteQty,
+          unit_price: finalPrice,
+          total_price: Number((finalPrice * lastMinuteQty).toFixed(2))
+        };
+        setEditApptLines([...editApptLines, newLine]);
+        setLastMinutePrestationId('');
+        setLastMinuteQty(1);
+        onToast("Prestation du catalogue rajoutée !", "success");
+      }
+    } else {
+      if (!customLineName) {
+        onToast("Veuillez renseigner le libellé de la prestation.", "info");
+        return;
+      }
       const newLine = {
-        prestation_name: `${found.name}${cl?.type_client === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
-        quantity: lastMinuteQty,
-        unit_price: finalPrice,
-        total_price: Number((finalPrice * lastMinuteQty).toFixed(2))
+        prestation_name: customLineName,
+        quantity: customLineQty,
+        unit_price: customLinePrice,
+        total_price: Number((customLinePrice * customLineQty).toFixed(2))
       };
       setEditApptLines([...editApptLines, newLine]);
-      setLastMinutePrestationId('');
-      setLastMinuteQty(1);
-      onToast("Prestation de dernière minute rajoutée !", "success");
+      setCustomLineName('');
+      setCustomLinePrice(0);
+      setCustomLineQty(1);
+      onToast("Prestation personnalisée (saisie libre) rajoutée !", "success");
     }
   };
 
@@ -2167,6 +2225,31 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                           </select>
                         </div>
 
+                        {/* Send / Resend Document Action Button */}
+                        <button
+                          onClick={() => handleSendOrResendDoc(viewingDoc)}
+                          disabled={sendingDocId === viewingDoc.id}
+                          className={`w-full font-bold py-3.5 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all ${
+                            sendingDocId === viewingDoc.id 
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white shadow-lg shadow-sky-500/20'
+                          }`}
+                        >
+                          <Mail className="w-4 h-4" />
+                          <span>
+                            {sendingDocId === viewingDoc.id 
+                              ? "Envoi en cours..."
+                              : viewingDoc.type === 'devis'
+                                ? viewingDoc.status === 'Brouillon'
+                                  ? "Envoyer le devis"
+                                  : "Renvoyer le devis"
+                                : viewingDoc.status === 'Brouillon'
+                                  ? "Envoyer la facture"
+                                  : "Renvoyer la facture"
+                            }
+                          </span>
+                        </button>
+
                         {viewingDoc.type === 'devis' && (
                           <button 
                             onClick={() => handleConvertToInvoice(viewingDoc.id, viewingDoc.number)}
@@ -3100,6 +3183,17 @@ export default {
                 >
                   ⚙️ Gestion des Horaires &amp; Fermetures
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveSettingsTab('prestations')}
+                  className={`px-4 py-2 text-[10px] uppercase font-black tracking-wider transition-all rounded-xl cursor-pointer ${
+                    activeSettingsTab === 'prestations'
+                      ? 'bg-sky-500 text-white shadow-md shadow-sky-500/10'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 animate-none'
+                  }`}
+                >
+                  🧼 Gestion des Prestations
+                </button>
               </div>
 
               {activeSettingsTab === 'general' ? (
@@ -3896,6 +3990,107 @@ export default {
                   </div>
                 </div>
               )}
+
+              {activeSettingsTab === 'prestations' && (
+                <div className="space-y-6 animate-in fade-in duration-250">
+                  <div className="bg-slate-50 p-6 rounded-3xl border border-dashed border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="font-extrabold text-slate-900 text-sm tracking-tight">Catalogue des Prestations</h3>
+                      <p className="text-[11px] text-slate-500 max-w-xl">
+                        Ajoutez, modifiez ou supprimez vos prestations de base. Celles-ci alimentent automatiquement votre simulateur de tarifs public et votre interface de création de devis.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPrestation(null);
+                        setPrestationForm({
+                          category: 'canape',
+                          name: '',
+                          type_tarif: 'fixe',
+                          prix_unitaire: 0,
+                          activer_majoration_nuit: true
+                        });
+                        setShowPrestationModal(true);
+                      }}
+                      className="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-sm cursor-pointer inline-flex items-center space-x-1.5"
+                    >
+                      <span>+</span>
+                      <span>Ajouter une prestation</span>
+                    </button>
+                  </div>
+
+                  <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-400 text-[9px] font-black uppercase tracking-wider border-b border-gray-100">
+                            <th className="py-3 px-6">Nom de la prestation</th>
+                            <th className="py-3 px-6">Catégorie</th>
+                            <th className="py-3 px-6">Type de Tarification</th>
+                            <th className="py-3 px-6">Prix Unitaire</th>
+                            <th className="py-3 px-6">Majoration Nuit</th>
+                            <th className="py-3 px-6 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-150/40 text-xs">
+                          {prestations.map(p => {
+                            const price = p.prix_unitaire !== undefined ? p.prix_unitaire : p.base_price;
+                            const label = p.type_tarif === 'm2' ? 'Au m²' : 'Prix Fixe';
+                            const maj = p.activer_majoration_nuit !== false ? '✅ Active' : '❌ Désactivée';
+                            return (
+                              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="py-3.5 px-6 font-semibold text-slate-900">{p.name}</td>
+                                <td className="py-3.5 px-6 font-mono text-[11px] font-bold text-slate-700">
+                                  {p.category}
+                                </td>
+                                <td className="py-3.5 px-6 font-medium text-slate-600">{label}</td>
+                                <td className="py-3.5 px-6 font-mono font-bold text-slate-900">{price.toFixed(2)} €</td>
+                                <td className="py-3.5 px-6 font-medium">{maj}</td>
+                                <td className="py-3.5 px-6 text-right">
+                                  <div className="flex justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingPrestation(p);
+                                        setPrestationForm({
+                                          category: p.category,
+                                          name: p.name,
+                                          type_tarif: p.type_tarif || (p.unit_label === 'm²' ? 'm2' : 'fixe'),
+                                          prix_unitaire: price,
+                                          activer_majoration_nuit: p.activer_majoration_nuit !== false
+                                        });
+                                        setShowPrestationModal(true);
+                                      }}
+                                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded-lg transition-all cursor-pointer font-bold text-[10px]"
+                                    >
+                                      Modifier
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (confirm(`Supprimer la prestation "${p.name}" ?`)) {
+                                          await apiService.deletePrestation(p.id);
+                                          onToast("Prestation supprimée !", "success");
+                                          const fresh = await apiService.getPrestations();
+                                          setPrestations(fresh);
+                                        }
+                                      }}
+                                      className="bg-rose-50 hover:bg-rose-100 text-rose-600 p-1.5 rounded-lg transition-all cursor-pointer"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4381,40 +4576,113 @@ export default {
                 </div>
 
                 {/* Add new on-the-fly line */}
-                <div className="bg-sky-50/20 p-3 rounded-2xl border border-sky-100/50 space-y-3">
-                  <p className="text-[10px] font-black text-sky-800 uppercase tracking-wide">Ajouter une prestation additionnelle</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <select
-                      value={lastMinutePrestationId}
-                      onChange={e => setLastMinutePrestationId(e.target.value)}
-                      className="w-full bg-white border border-gray-150 text-[11px] p-2 rounded-xl outline-none"
-                    >
-                      <option value="">-- Choisir la prestation --</option>
-                      {prestations.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.base_price} €)
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="flex gap-1">
-                      <input
-                        type="number"
-                        min="1"
-                        placeholder="Qté"
-                        value={lastMinuteQty}
-                        onChange={e => setLastMinuteQty(Number(e.target.value))}
-                        className="w-16 bg-white border border-gray-150 text-[11px] p-2 rounded-xl text-center outline-none"
-                      />
+                <div className="bg-sky-50/20 p-3.5 rounded-2xl border border-sky-100/50 space-y-3">
+                  <div className="flex justify-between items-center pb-2 border-b border-sky-100/30">
+                    <p className="text-[10px] font-black text-sky-800 uppercase tracking-wide">Ajouter une prestation</p>
+                    <div className="flex bg-white p-0.5 rounded-lg border border-sky-100/80">
                       <button
                         type="button"
-                        onClick={addLastMinutePrestation}
-                        className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-extrabold text-[10px] px-2.5 py-2 rounded-xl transition-all cursor-pointer shadow-md shadow-sky-500/10"
+                        onClick={() => setLineComposeMode('catalogue')}
+                        className={`px-2.5 py-1 text-[9px] font-bold rounded-md transition-all cursor-pointer ${lineComposeMode === 'catalogue' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                       >
-                        + Ajouter au RDV
+                        Catalogue
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLineComposeMode('libre')}
+                        className={`px-2.5 py-1 text-[9px] font-bold rounded-md transition-all cursor-pointer ${lineComposeMode === 'libre' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Saisie Libre
                       </button>
                     </div>
                   </div>
+
+                  {lineComposeMode === 'catalogue' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <select
+                        value={lastMinutePrestationId}
+                        onChange={e => {
+                          setLastMinutePrestationId(e.target.value);
+                          const p = prestations.find(pr => pr.id === e.target.value);
+                          if (p) {
+                            // Pre-fill price representation or handle
+                          }
+                        }}
+                        className="w-full bg-white border border-gray-150 text-[11px] p-2 rounded-xl outline-none"
+                      >
+                        <option value="">-- Choisir la prestation --</option>
+                        {prestations.map(p => {
+                          const price = p.prix_unitaire !== undefined ? p.prix_unitaire : p.base_price;
+                          const label = p.type_tarif === 'm2' ? 'm²' : 'unité';
+                          return (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({price} € / {label})
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      <div className="flex gap-1">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.1"
+                          placeholder={
+                            prestations.find(p => p.id === lastMinutePrestationId)?.type_tarif === 'm2'
+                              ? "Surface m²"
+                              : "Qté"
+                          }
+                          value={lastMinuteQty}
+                          onChange={e => setLastMinuteQty(parseFloat(e.target.value) || 0)}
+                          className="w-20 bg-white border border-gray-150 text-[11px] p-2 rounded-xl text-center outline-none font-bold text-slate-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={addLastMinutePrestation}
+                          className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-extrabold text-[10px] px-2.5 py-2 rounded-xl transition-all cursor-pointer shadow-md shadow-sky-500/10"
+                        >
+                          + Ajouter
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="Libellé de la prestation (ex: Nettoyage banquette de bateau)"
+                        value={customLineName}
+                        onChange={e => setCustomLineName(e.target.value)}
+                        className="w-full bg-white border border-gray-150 text-[11px] p-2 rounded-xl outline-none font-medium"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Prix unitaire (€)"
+                          value={customLinePrice || ''}
+                          onChange={e => setCustomLinePrice(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-white border border-gray-150 text-[11px] p-2 rounded-xl text-center outline-none"
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          min="0.1"
+                          placeholder="Quantité"
+                          value={customLineQty || ''}
+                          onChange={e => setCustomLineQty(parseFloat(e.target.value) || 0)}
+                          className="w-full bg-white border border-gray-150 text-[11px] p-2 rounded-xl text-center outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={addLastMinutePrestation}
+                          className="bg-sky-500 hover:bg-sky-600 text-white font-extrabold text-[10px] rounded-xl transition-all cursor-pointer shadow-md shadow-sky-500/10"
+                        >
+                          + Ajouter libre
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -5245,6 +5513,135 @@ export default {
                 className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 rounded-xl text-xs transition-colors cursor-pointer block text-center shadow-lg shadow-emerald-500/10"
               >
                 Inscrire au planning
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. GESTION DES PRESTATIONS: ADD / EDIT MODAL */}
+      {showPrestationModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-slate-50 px-6 py-4 flex justify-between items-center border-b border-gray-100">
+              <span className="font-bold text-slate-900 text-sm">
+                {editingPrestation ? 'Modifier la Prestation' : 'Ajouter une Prestation'}
+              </span>
+              <button 
+                onClick={() => setShowPrestationModal(false)} 
+                className="text-slate-400 hover:text-slate-900 p-1 rounded-full hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const payload = {
+                    category: prestationForm.category,
+                    name: prestationForm.name,
+                    type_tarif: prestationForm.type_tarif,
+                    prix_unitaire: Number(prestationForm.prix_unitaire),
+                    base_price: Number(prestationForm.prix_unitaire), // legacy
+                    unit_label: prestationForm.type_tarif === 'm2' ? 'm²' : 'unité',
+                    activer_majoration_nuit: prestationForm.activer_majoration_nuit
+                  };
+
+                  if (editingPrestation) {
+                    await apiService.updatePrestation({
+                      id: editingPrestation.id,
+                      ...payload
+                    });
+                    onToast("Prestation modifiée avec succès !", "success");
+                  } else {
+                    await apiService.createPrestation(payload);
+                    onToast("Prestation créée avec succès !", "success");
+                  }
+
+                  const fresh = await apiService.getPrestations();
+                  setPrestations(fresh);
+                  setShowPrestationModal(false);
+                } catch (err: any) {
+                  console.error(err);
+                  onToast("Erreur lors de la sauvegarde : " + err.message, "info");
+                }
+              }} 
+              className="p-6 space-y-4"
+            >
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Nom de la prestation *</span>
+                <input 
+                  type="text"
+                  required
+                  placeholder="Ex: Nettoyage matelas 2 places"
+                  value={prestationForm.name}
+                  onChange={e => setPrestationForm({ ...prestationForm, name: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Catégorie *</span>
+                  <select 
+                    value={prestationForm.category}
+                    onChange={e => setPrestationForm({ ...prestationForm, category: e.target.value as any })}
+                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                  >
+                    <option value="canape">Canapés / Sofas</option>
+                    <option value="moquette">Sols & Tapis</option>
+                    <option value="fauteuil">Assises</option>
+                    <option value="autre">Options / Autre</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Tarification *</span>
+                  <select 
+                    value={prestationForm.type_tarif}
+                    onChange={e => setPrestationForm({ ...prestationForm, type_tarif: e.target.value as any })}
+                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                  >
+                    <option value="fixe">Prix Fixe (unité)</option>
+                    <option value="m2">Au Mètre Carré (m²)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Prix unitaire (€) *</span>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    required
+                    value={prestationForm.prix_unitaire || ''}
+                    onChange={e => setPrestationForm({ ...prestationForm, prix_unitaire: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none focus:bg-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <label className="flex items-center space-x-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs cursor-pointer select-none">
+                  <input 
+                    type="checkbox"
+                    checked={prestationForm.activer_majoration_nuit}
+                    onChange={e => setPrestationForm({ ...prestationForm, activer_majoration_nuit: e.target.checked })}
+                    className="rounded border-gray-300 text-sky-500 focus:ring-sky-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span className="font-semibold text-slate-800">Activer la majoration de nuit automatique</span>
+                </label>
+              </div>
+
+              <button 
+                type="submit"
+                className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3.5 rounded-xl text-xs transition-colors cursor-pointer block text-center shadow-lg shadow-sky-500/10"
+              >
+                Enregistrer la prestation
               </button>
             </form>
           </div>

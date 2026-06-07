@@ -17,8 +17,40 @@ const uuid = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 
 app.get('/prestations', async (c) => {
   try {
-    const { results } = await c.env.DB.prepare('SELECT * FROM prestations').all();
-    return c.json(results);
+    const { results } = await c.env.DB.prepare('SELECT * FROM prestations').all<any>();
+    const mapped = results.map((r) => ({
+      id: r.id,
+      category: r.category,
+      name: r.name,
+      base_price: r.prix_unitaire !== undefined ? r.prix_unitaire : 0,
+      unit_label: r.type_tarif === 'm2' ? 'm²' : 'unité',
+      type_tarif: r.type_tarif || 'fixe',
+      prix_unitaire: r.prix_unitaire !== undefined ? r.prix_unitaire : 0,
+      activer_majoration_nuit: r.activer_majoration_nuit === 1
+    }));
+    return c.json(mapped);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/prestations', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `p-${Date.now()}`;
+    await c.env.DB.prepare(
+      'INSERT OR REPLACE INTO prestations (id, category, name, type_tarif, prix_unitaire, activer_majoration_nuit) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+      .bind(
+        id,
+        body.category,
+        body.name,
+        body.type_tarif || 'fixe',
+        body.prix_unitaire !== undefined ? body.prix_unitaire : body.base_price,
+        body.activer_majoration_nuit ? 1 : 0
+      )
+      .run();
+    return c.json({ id, ...body });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
@@ -29,15 +61,72 @@ app.put('/prestations/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json();
     await c.env.DB.prepare(
-      'UPDATE prestations SET category = ?, name = ?, base_price = ?, unit_label = ? WHERE id = ?'
+      'UPDATE prestations SET category = ?, name = ?, type_tarif = ?, prix_unitaire = ?, activer_majoration_nuit = ? WHERE id = ?'
     )
-      .bind(body.category, body.name, body.base_price, body.unit_label, id)
+      .bind(
+        body.category,
+        body.name,
+        body.type_tarif || 'fixe',
+        body.prix_unitaire !== undefined ? body.prix_unitaire : body.base_price,
+        body.activer_majoration_nuit ? 1 : 0,
+        id
+      )
       .run();
     return c.json({ id, ...body });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
 });
+
+app.delete('/prestations/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    await c.env.DB.prepare('DELETE FROM prestations WHERE id = ?').bind(id).run();
+    return c.json({ success: true });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+// ==========================================
+// DEMANDES DE DEVIS
+// ==========================================
+
+app.get('/demandes-devis', async (c) => {
+  try {
+    const { results } = await c.env.DB.prepare('SELECT * FROM demandes_devis ORDER BY created_at DESC').all();
+    const mapped = results.map((r: any) => ({
+      ...r,
+      demande_visite: r.demande_visite === 1
+    }));
+    return c.json(mapped);
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
+app.post('/demandes-devis', async (c) => {
+  try {
+    const body = await c.req.json();
+    const id = body.id || `req-${Date.now()}`;
+    await c.env.DB.prepare(
+      'INSERT OR REPLACE INTO demandes_devis (id, client_id, nombre_objets, description_etat, surface_dimensions, demande_visite) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+      .bind(
+        id,
+        body.client_id,
+        body.nombre_objets || null,
+        body.description_etat || null,
+        body.surface_dimensions || null,
+        body.demande_visite ? 1 : 0
+      )
+      .run();
+    return c.json({ id, ...body });
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
+  }
+});
+
 
 // ==========================================
 // CLIENTS (CRM)
@@ -913,6 +1002,121 @@ app.post('/emails/send', async (c) => {
     });
   } catch (e: any) {
     return c.json({ success: false, error: e.message }, 500);
+  }
+});
+
+app.post('/admin/documents/renvoyer', async (c) => {
+  try {
+    const { documentId, origin } = await c.req.json();
+    if (!documentId) {
+      return c.json({ error: 'documentId est requis' }, 400);
+    }
+
+    // 1. Fetch document
+    const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(documentId).first<any>();
+    if (!doc) {
+      return c.json({ error: 'Document non trouvé' }, 404);
+    }
+
+    // 2. Fetch client
+    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(doc.client_id).first<any>();
+    if (!client) {
+      return c.json({ error: 'Client non trouvé' }, 404);
+    }
+
+    // 3. Fetch email configuration for 'document_sending'
+    const config = await c.env.DB.prepare(
+      'SELECT * FROM configurations_emails WHERE flux_type = ?'
+    )
+      .bind('document_sending')
+      .first<any>();
+
+    const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
+    const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
+
+    let subject = config ? config.sujet : `Votre document de prestation - ${companyName}`;
+    let body = config ? config.corps_message : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}';
+
+    // 4. Inject dynamic variables
+    const reqOrigin = origin || new URL(c.req.url).origin;
+    const documentLink = `${reqOrigin}/?devis_id=${doc.id}`;
+    
+    const replacements: Record<string, string> = {
+      PRENOM_CLIENT: client.first_name || '',
+      NOM_CLIENT: client.last_name || '',
+      TOTAL_DOCUMENT: `${doc.total_amount.toFixed(2)} €`,
+      TOTAL: `${doc.total_amount.toFixed(2)} €`,
+      LIEN_UNIQUE: documentLink,
+      NOM_ENTREPRISE: companyName
+    };
+
+    Object.entries(replacements).forEach(([key, val]) => {
+      const tag = `{${key}}`;
+      subject = subject.replace(new RegExp(tag, 'g'), val);
+      body = body.replace(new RegExp(tag, 'g'), val);
+    });
+
+    // 5. Send email via Resend
+    const resendApiKey = c.env.RESEND_API_KEY;
+    const from = `${companyName} <notifications@l-iamani.com>`;
+
+    let emailSent = false;
+    let resendData = null;
+
+    if (resendApiKey) {
+      const htmlBody = `
+        <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #f1f5f9; border-radius: 12px;">
+          <h2 style="color: #0ea5e9; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">${companyName}</h2>
+          <div style="white-space: pre-wrap; line-height: 1.6; font-size: 14px;">
+            ${body.replace(/\n/g, '<br/>')}
+          </div>
+          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+          <p style="font-size: 10px; color: #94a3b8; text-align: center;">
+            Cet email a été envoyé automatiquement depuis votre espace ${companyName}.
+          </p>
+        </div>
+      `;
+
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from,
+          to: [client.email],
+          subject,
+          html: htmlBody
+        })
+      });
+
+      resendData = await response.json() as any;
+      if (response.ok) {
+        emailSent = true;
+      }
+    } else {
+      console.warn('[Resend API] No API Key, simulating email send.');
+      emailSent = true;
+    }
+
+    // 6. Update document status if it's currently 'Brouillon' (or 'Facturé' for invoices)
+    let newStatus = doc.status;
+    if (doc.status === 'Brouillon' || (doc.type === 'facture' && doc.status === 'Facturé')) {
+      newStatus = 'Envoyé au client';
+      await c.env.DB.prepare('UPDATE documents SET status = ? WHERE id = ?').bind(newStatus, doc.id).run();
+    }
+
+    return c.json({
+      success: emailSent,
+      newStatus,
+      sentTo: client.email,
+      resendData,
+      simulated: !resendApiKey
+    });
+
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500);
   }
 });
 

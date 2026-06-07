@@ -32,6 +32,19 @@ export interface Prestation {
   name: string;
   base_price: number;
   unit_label: string; // "place", "m²", "unité"
+  type_tarif?: 'fixe' | 'm2';
+  prix_unitaire?: number;
+  activer_majoration_nuit?: boolean;
+}
+
+export interface DemandeDevis {
+  id: string;
+  client_id: string;
+  nombre_objets: string;
+  description_etat: string;
+  surface_dimensions: string;
+  demande_visite: boolean;
+  created_at: string;
 }
 
 export type DocumentType = 'devis' | 'facture';
