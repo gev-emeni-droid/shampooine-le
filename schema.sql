@@ -244,7 +244,10 @@ CREATE TABLE IF NOT EXISTS entreprise_config (
   tva_intracommunautaire TEXT,
   forme_juridique TEXT,
   capital_social TEXT,
-  logo_url TEXT
+  logo_url TEXT,
+  admin_username TEXT DEFAULT 'shampooinele.direction',  -- Pseudo de connexion admin
+  admin_email_contact TEXT DEFAULT '',                   -- Email de contact/notification artisan
+  admin_password_hash TEXT DEFAULT 'admin123'            -- Mot de passe (stockage local uniquement)
 );
 
 -- Seed configuration par défaut de l'entreprise

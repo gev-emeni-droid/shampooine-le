@@ -798,17 +798,20 @@ app.get('/entreprise-config', async (c) => {
         majorat_tarif_nuit_pct: 25,
         plage_majoration_debut: '19:00',
         plage_majoration_fin: '06:00',
-        activer_majoration: true
+        activer_majoration: true,
+        admin_username: 'shampooinele.direction',
+        admin_email_contact: ''
       });
     }
 
-    // Adapt sqlite columns to frontend camelCase or extra fields
     return c.json({
       ...config,
       majorat_tarif_nuit_pct: config.majorat_tarif_nuit_pct !== undefined ? config.majorat_tarif_nuit_pct : 25,
       plage_majoration_debut: config.plage_majoration_debut || '19:00',
       plage_majoration_fin: config.plage_majoration_fin || '06:00',
-      activer_majoration: config.activer_majoration !== undefined ? (config.activer_majoration ? true : false) : true
+      activer_majoration: config.activer_majoration !== undefined ? (config.activer_majoration ? true : false) : true,
+      admin_username: config.admin_username || 'shampooinele.direction',
+      admin_email_contact: config.admin_email_contact || ''
     });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -821,8 +824,9 @@ app.put('/admin/entreprise-config', async (c) => {
     await c.env.DB.prepare(
       `INSERT OR REPLACE INTO entreprise_config (
         id, nom_entreprise, telephone, adresse_siege, horaires, siret, code_ape, 
-        tva_intracommunautaire, forme_juridique, capital_social, logo_url
-      ) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        tva_intracommunautaire, forme_juridique, capital_social, logo_url,
+        admin_username, admin_email_contact, admin_password_hash
+      ) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         body.nom_entreprise,
@@ -834,7 +838,10 @@ app.put('/admin/entreprise-config', async (c) => {
         body.tva_intracommunautaire,
         body.forme_juridique,
         body.capital_social,
-        body.logo_url
+        body.logo_url,
+        body.admin_username || 'shampooinele.direction',
+        body.admin_email_contact || '',
+        body.admin_password_hash || 'admin123'
       )
       .run();
     return c.json(body);
@@ -981,8 +988,13 @@ app.post('/emails/send', async (c) => {
     const { recipientEmail, subject, body, fromName, fluxType, replacements } = await c.req.json();
     const resendApiKey = c.env.RESEND_API_KEY;
 
-    let finalSubject = subject;
-    let finalBody = body;
+    // Validation de base
+    if (!recipientEmail) {
+      return c.json({ success: false, error: 'recipientEmail est requis' }, 400);
+    }
+
+    let finalSubject = subject || 'Notification Shampooine Le';
+    let finalBody = body || '';
 
     // Handle automated template triggers if fluxType/replacements specified
     if (fluxType && replacements) {
@@ -1011,31 +1023,38 @@ app.post('/emails/send', async (c) => {
     }
 
     if (!resendApiKey) {
-      console.warn('[Resend Cloudflare] RESEND_API_KEY is not set. Simulating mail send.');
+      console.warn('[Resend] RESEND_API_KEY manquante dans les variables d\'environnement Cloudflare Pages !');
+      console.warn('[Resend] Simulation: to=' + recipientEmail + ' | subject=' + finalSubject);
       return c.json({
         success: true,
         subject: finalSubject,
         body: finalBody,
         sentTo: recipientEmail,
-        simulated: true
+        simulated: true,
+        warning: 'RESEND_API_KEY non configuree - email simule uniquement'
       });
     }
 
     const validatedFromName = fromName || 'Shampooine Le';
-    const from = `${validatedFromName} <onboarding@resend.dev>`;
+    // Domaine verifie l-iamani.com - peut envoyer vers n'importe quelle adresse
+    const from = `${validatedFromName} <notifications@l-iamani.com>`;
 
     const htmlBody = `
-      <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #f1f5f9; border-radius: 12px;">
-        <h2 style="color: #0ea5e9; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">${validatedFromName}</h2>
-        <div style="white-space: pre-wrap; line-height: 1.6; font-size: 14px;">
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px;">
+        <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 20px 24px; border-radius: 12px; margin-bottom: 24px;">
+          <h2 style="color: white; font-weight: 800; margin: 0; font-size: 18px;">${validatedFromName}</h2>
+        </div>
+        <div style="white-space: pre-wrap; line-height: 1.7; font-size: 14px; color: #374151;">
           ${finalBody.replace(/\n/g, '<br/>')}
         </div>
-        <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
-        <p style="font-size: 10px; color: #94a3b8; text-align: center;">
+        <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
           Cet email a été envoyé automatiquement depuis votre espace ${validatedFromName}.
         </p>
       </div>
     `;
+
+    console.log(`[Resend] Tentative envoi email vers: ${recipientEmail} | sujet: ${finalSubject}`);
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -1054,9 +1073,19 @@ app.post('/emails/send', async (c) => {
     const data = await response.json() as any;
 
     if (!response.ok) {
-      return c.json({ success: false, error: data.message || 'Error from Resend API' }, response.status);
+      console.error('[Resend] ERREUR API:', JSON.stringify(data));
+      console.error('[Resend] Status HTTP:', response.status);
+      console.error('[Resend] From:', from, '| To:', recipientEmail);
+      return c.json({ 
+        success: false, 
+        error: data.message || data.name || 'Erreur API Resend',
+        details: data,
+        from,
+        to: recipientEmail
+      }, 400);
     }
 
+    console.log(`[Resend] ✅ Email envoye avec succes! ID: ${data.id}`);
     return c.json({
       success: true,
       subject: finalSubject,
@@ -1065,6 +1094,7 @@ app.post('/emails/send', async (c) => {
       resendData: data
     });
   } catch (e: any) {
+    console.error('[Resend] Exception:', e.message);
     return c.json({ success: false, error: e.message }, 500);
   }
 });
@@ -1075,6 +1105,8 @@ app.post('/admin/documents/renvoyer', async (c) => {
     if (!documentId) {
       return c.json({ error: 'documentId est requis' }, 400);
     }
+
+    const resendApiKey = c.env.RESEND_API_KEY;
 
     // 1. Fetch document
     const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(documentId).first<any>();
@@ -1088,6 +1120,10 @@ app.post('/admin/documents/renvoyer', async (c) => {
       return c.json({ error: 'Client non trouvé' }, 404);
     }
 
+    if (!client.email || !client.email.includes('@')) {
+      return c.json({ error: `Email client invalide ou manquant: "${client.email}"` }, 400);
+    }
+
     // 3. Fetch email configuration for 'document_sending'
     const config = await c.env.DB.prepare(
       'SELECT * FROM configurations_emails WHERE flux_type = ?'
@@ -1099,18 +1135,23 @@ app.post('/admin/documents/renvoyer', async (c) => {
     const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
 
     let subject = config ? config.sujet : `Votre document de prestation - ${companyName}`;
-    let body = config ? config.corps_message : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}';
+    let body = config
+      ? config.corps_message
+      : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre document concernant nos services.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}';
 
     // 4. Inject dynamic variables
     const reqOrigin = origin || new URL(c.req.url).origin;
     const documentLink = `${reqOrigin}/?devis_id=${doc.id}`;
-    
+
     const replacements: Record<string, string> = {
       PRENOM_CLIENT: client.first_name || '',
       NOM_CLIENT: client.last_name || '',
-      TOTAL_DOCUMENT: `${doc.total_amount.toFixed(2)} €`,
-      TOTAL: `${doc.total_amount.toFixed(2)} €`,
+      TYPE_DOCUMENT: doc.type === 'devis' ? 'Devis' : 'Facture',
+      NUMERO_DOCUMENT: doc.number || doc.id,
+      TOTAL_DOCUMENT: `${(doc.total_amount || 0).toFixed(2)} €`,
+      TOTAL: `${(doc.total_amount || 0).toFixed(2)} €`,
       LIEN_UNIQUE: documentLink,
+      LIEN_DOCUMENT: documentLink,
       NOM_ENTREPRISE: companyName
     };
 
@@ -1121,25 +1162,29 @@ app.post('/admin/documents/renvoyer', async (c) => {
     });
 
     // 5. Send email via Resend
-    const resendApiKey = c.env.RESEND_API_KEY;
     const from = `${companyName} <notifications@l-iamani.com>`;
 
     let emailSent = false;
-    let resendData = null;
+    let resendData: any = null;
+    let resendError: any = null;
 
     if (resendApiKey) {
       const htmlBody = `
-        <div style="font-family: sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #f1f5f9; border-radius: 12px;">
-          <h2 style="color: #0ea5e9; font-weight: 800; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">${companyName}</h2>
-          <div style="white-space: pre-wrap; line-height: 1.6; font-size: 14px;">
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px;">
+          <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 20px 24px; border-radius: 12px; margin-bottom: 24px;">
+            <h2 style="color: white; font-weight: 800; margin: 0;">${companyName}</h2>
+          </div>
+          <div style="white-space: pre-wrap; line-height: 1.7; font-size: 14px; color: #374151;">
             ${body.replace(/\n/g, '<br/>')}
           </div>
-          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
-          <p style="font-size: 10px; color: #94a3b8; text-align: center;">
+          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+          <p style="font-size: 11px; color: #94a3b8; text-align: center;">
             Cet email a été envoyé automatiquement depuis votre espace ${companyName}.
           </p>
         </div>
       `;
+
+      console.log(`[Resend/renvoyer] Tentative vers: ${client.email} | sujet: ${subject}`);
 
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -1158,15 +1203,20 @@ app.post('/admin/documents/renvoyer', async (c) => {
       resendData = await response.json() as any;
       if (response.ok) {
         emailSent = true;
+        console.log(`[Resend/renvoyer] ✅ Succes! ID: ${resendData.id}`);
+      } else {
+        resendError = resendData;
+        console.error('[Resend/renvoyer] ERREUR:', JSON.stringify(resendData));
+        console.error('[Resend/renvoyer] From:', from, '| To:', client.email);
       }
     } else {
-      console.warn('[Resend API] No API Key, simulating email send.');
+      console.warn('[Resend/renvoyer] RESEND_API_KEY manquante - simulation uniquement.');
       emailSent = true;
     }
 
-    // 6. Update document status if it's currently 'Brouillon' (or 'Facturé' for invoices)
+    // 6. Update document status if it's currently 'Brouillon'
     let newStatus = doc.status;
-    if (doc.status === 'Brouillon' || (doc.type === 'facture' && doc.status === 'Facturé')) {
+    if (emailSent && (doc.status === 'Brouillon' || (doc.type === 'facture' && doc.status === 'Facturé'))) {
       newStatus = 'Envoyé au client';
       await c.env.DB.prepare('UPDATE documents SET status = ? WHERE id = ?').bind(newStatus, doc.id).run();
     }
@@ -1176,10 +1226,12 @@ app.post('/admin/documents/renvoyer', async (c) => {
       newStatus,
       sentTo: client.email,
       resendData,
+      resendError,
       simulated: !resendApiKey
     });
 
   } catch (e: any) {
+    console.error('[Resend/renvoyer] Exception:', e.message);
     return c.json({ error: e.message }, 500);
   }
 });
