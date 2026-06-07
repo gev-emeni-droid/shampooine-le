@@ -26,7 +26,8 @@ app.get('/prestations', async (c) => {
       unit_label: r.type_tarif === 'm2' ? 'm²' : 'unité',
       type_tarif: r.type_tarif || 'fixe',
       prix_unitaire: r.prix_unitaire !== undefined ? r.prix_unitaire : 0,
-      activer_majoration_nuit: r.activer_majoration_nuit === 1
+      activer_majoration_nuit: r.activer_majoration_nuit === 1,
+      temps_estime_minutes: r.temps_estime_minutes !== undefined ? r.temps_estime_minutes : 30
     }));
     return c.json(mapped);
   } catch (e: any) {
@@ -39,7 +40,7 @@ app.post('/prestations', async (c) => {
     const body = await c.req.json();
     const id = body.id || `p-${Date.now()}`;
     await c.env.DB.prepare(
-      'INSERT OR REPLACE INTO prestations (id, category, name, type_tarif, prix_unitaire, activer_majoration_nuit) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT OR REPLACE INTO prestations (id, category, name, type_tarif, prix_unitaire, activer_majoration_nuit, temps_estime_minutes) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
       .bind(
         id,
@@ -47,7 +48,8 @@ app.post('/prestations', async (c) => {
         body.name,
         body.type_tarif || 'fixe',
         body.prix_unitaire !== undefined ? body.prix_unitaire : body.base_price,
-        body.activer_majoration_nuit ? 1 : 0
+        body.activer_majoration_nuit ? 1 : 0,
+        body.temps_estime_minutes !== undefined ? Number(body.temps_estime_minutes) : 30
       )
       .run();
     return c.json({ id, ...body });
@@ -61,7 +63,7 @@ app.put('/prestations/:id', async (c) => {
     const id = c.req.param('id');
     const body = await c.req.json();
     await c.env.DB.prepare(
-      'UPDATE prestations SET category = ?, name = ?, type_tarif = ?, prix_unitaire = ?, activer_majoration_nuit = ? WHERE id = ?'
+      'UPDATE prestations SET category = ?, name = ?, type_tarif = ?, prix_unitaire = ?, activer_majoration_nuit = ?, temps_estime_minutes = ? WHERE id = ?'
     )
       .bind(
         body.category,
@@ -69,6 +71,7 @@ app.put('/prestations/:id', async (c) => {
         body.type_tarif || 'fixe',
         body.prix_unitaire !== undefined ? body.prix_unitaire : body.base_price,
         body.activer_majoration_nuit ? 1 : 0,
+        body.temps_estime_minutes !== undefined ? Number(body.temps_estime_minutes) : 30,
         id
       )
       .run();

@@ -35,6 +35,7 @@ export interface Prestation {
   type_tarif?: 'fixe' | 'm2';
   prix_unitaire?: number;
   activer_majoration_nuit?: boolean;
+  temps_estime_minutes?: number;
 }
 
 export interface DemandeDevis {

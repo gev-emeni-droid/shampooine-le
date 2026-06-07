@@ -91,11 +91,12 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   const [editingPrestation, setEditingPrestation] = useState<Prestation | null>(null);
   const [showPrestationModal, setShowPrestationModal] = useState(false);
   const [prestationForm, setPrestationForm] = useState({
-    category: 'canape' as Prestation['category'],
+    category: 'canape' as 'canape' | 'moquette' | 'fauteuil' | 'autre',
     name: '',
     type_tarif: 'fixe' as 'fixe' | 'm2',
     prix_unitaire: 0,
-    activer_majoration_nuit: true
+    activer_majoration_nuit: true,
+    temps_estime_minutes: 30
   });
 
   // Quote line composition state variables
@@ -239,6 +240,31 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     notes: ''
   });
   const [editApptLines, setEditApptLines] = useState<{ prestation_name: string; quantity: number; unit_price: number; total_price: number }[]>([]);
+  
+  useEffect(() => {
+    if (!editApptModal) return;
+    
+    // Auto-calculate sum of durations for editApptLines
+    let totalMinutes = 0;
+    editApptLines.forEach(line => {
+      // Find matching prestation in catalogue by checking if the line name starts with the prestation name
+      // (as line names can have suffixes like Grade Professionnel or night surcharge indicators)
+      const matched = prestations.find(p => {
+        // Clean name comparisons
+        const cleanLineName = line.prestation_name.toLowerCase().trim();
+        const cleanPrestationName = p.name.toLowerCase().trim();
+        return cleanLineName.startsWith(cleanPrestationName);
+      });
+      
+      const unitTime = matched && matched.temps_estime_minutes !== undefined ? matched.temps_estime_minutes : 30;
+      totalMinutes += unitTime * line.quantity;
+    });
+
+    if (totalMinutes > 0) {
+      setEditApptForm(prev => ({ ...prev, duration_minutes: totalMinutes }));
+    }
+  }, [editApptLines, editApptModal, prestations]);
+
   const [lastMinutePrestationId, setLastMinutePrestationId] = useState('');
   const [lastMinuteQty, setLastMinuteQty] = useState(1);
 
@@ -4622,7 +4648,8 @@ export default {
                           name: '',
                           type_tarif: 'fixe',
                           prix_unitaire: 0,
-                          activer_majoration_nuit: true
+                          activer_majoration_nuit: true,
+                          temps_estime_minutes: 30
                         });
                         setShowPrestationModal(true);
                       }}
@@ -4641,6 +4668,7 @@ export default {
                             <th className="py-3 px-6">Nom de la prestation</th>
                             <th className="py-3 px-6">Catégorie</th>
                             <th className="py-3 px-6">Type de Tarification</th>
+                            <th className="py-3 px-6">Durée estimée</th>
                             <th className="py-3 px-6">Prix Unitaire</th>
                             <th className="py-3 px-6">Majoration Nuit</th>
                             <th className="py-3 px-6 text-right">Actions</th>
@@ -4651,6 +4679,7 @@ export default {
                             const price = p.prix_unitaire !== undefined ? p.prix_unitaire : p.base_price;
                             const label = p.type_tarif === 'm2' ? 'Au m²' : 'Prix Fixe';
                             const maj = p.activer_majoration_nuit !== false ? '✅ Active' : '❌ Désactivée';
+                            const duration = p.temps_estime_minutes !== undefined ? p.temps_estime_minutes : 30;
                             return (
                               <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                                 <td className="py-3.5 px-6 font-semibold text-slate-900">{p.name}</td>
@@ -4658,6 +4687,7 @@ export default {
                                   {p.category}
                                 </td>
                                 <td className="py-3.5 px-6 font-medium text-slate-600">{label}</td>
+                                <td className="py-3.5 px-6 font-mono font-medium text-slate-600">{duration} min</td>
                                 <td className="py-3.5 px-6 font-mono font-bold text-slate-900">{price.toFixed(2)} €</td>
                                 <td className="py-3.5 px-6 font-medium">{maj}</td>
                                 <td className="py-3.5 px-6 text-right">
@@ -4671,7 +4701,8 @@ export default {
                                           name: p.name,
                                           type_tarif: p.type_tarif || (p.unit_label === 'm²' ? 'm2' : 'fixe'),
                                           prix_unitaire: price,
-                                          activer_majoration_nuit: p.activer_majoration_nuit !== false
+                                          activer_majoration_nuit: p.activer_majoration_nuit !== false,
+                                          temps_estime_minutes: p.temps_estime_minutes !== undefined ? p.temps_estime_minutes : 30
                                         });
                                         setShowPrestationModal(true);
                                       }}
@@ -6356,7 +6387,8 @@ export default {
                     prix_unitaire: Number(prestationForm.prix_unitaire),
                     base_price: Number(prestationForm.prix_unitaire), // legacy
                     unit_label: prestationForm.type_tarif === 'm2' ? 'm²' : 'unité',
-                    activer_majoration_nuit: prestationForm.activer_majoration_nuit
+                    activer_majoration_nuit: prestationForm.activer_majoration_nuit,
+                    temps_estime_minutes: Number(prestationForm.temps_estime_minutes)
                   };
 
                   if (editingPrestation) {
@@ -6420,7 +6452,7 @@ export default {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Prix unitaire (€) *</span>
                   <input 
@@ -6430,6 +6462,18 @@ export default {
                     required
                     value={prestationForm.prix_unitaire || ''}
                     onChange={e => setPrestationForm({ ...prestationForm, prix_unitaire: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none focus:bg-white font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Temps estimé (minutes) *</span>
+                  <input 
+                    type="number"
+                    min="1"
+                    required
+                    value={prestationForm.temps_estime_minutes || ''}
+                    onChange={e => setPrestationForm({ ...prestationForm, temps_estime_minutes: parseInt(e.target.value) || 0 })}
                     className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none focus:bg-white font-mono"
                   />
                 </div>
