@@ -165,7 +165,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     notes: '',
   });
-  const [newDocLines, setNewDocLines] = useState<{ prestation_id: string; quantity: number; unit_price: number }[]>([]);
+  const [newDocLines, setNewDocLines] = useState<{ prestation_id: string; quantity: number; unit_price: number; custom_name?: string }[]>([]);
 
   // B2B & CRM Multi-adresses State
   const [editClientModal, setEditClientModal] = useState(false);
@@ -1013,14 +1013,19 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     }
   };
 
-  const updateLineValue = (index: number, field: 'prestation_id' | 'quantity' | 'unit_price', val: any) => {
+  const updateLineValue = (index: number, field: string, val: any) => {
     const lines = [...newDocLines];
     if (field === 'prestation_id') {
-      const p = prestations.find(x => x.id === val);
       lines[index].prestation_id = val;
-      lines[index].unit_price = p ? p.base_price : 0;
+      if (val === 'custom') {
+        lines[index].custom_name = '';
+        lines[index].unit_price = 0;
+      } else {
+        const p = prestations.find(x => x.id === val);
+        lines[index].unit_price = p ? p.base_price : 0;
+      }
     } else {
-      lines[index][field] = val;
+      (lines[index] as any)[field] = val;
     }
     setNewDocLines(lines);
   };
@@ -1067,10 +1072,10 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       const sanitLines = newDocLines.map(line => {
         const p = prestations.find(x => x.id === line.prestation_id);
         return {
-          prestation_name: p ? p.name : 'Service Nettoyage',
-          quantity: line.quantity,
-          unit_price: line.unit_price,
-          total_price: line.quantity * line.unit_price
+          prestation_name: line.prestation_id === 'custom' ? (line.custom_name || 'Prestation personnalisée') : (p ? p.name : 'Service Nettoyage'),
+          quantity: Number(line.quantity),
+          unit_price: Number(line.unit_price),
+          total_price: Number(line.quantity) * Number(line.unit_price)
         };
       });
 
@@ -5314,16 +5319,32 @@ export default {
                   ) : (
                     newDocLines.map((line, index) => (
                       <div key={index} className="flex gap-2 items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                        <div className="flex-1">
-                          <select 
-                            value={line.prestation_id}
-                            onChange={e => updateLineValue(index, 'prestation_id', e.target.value)}
-                            className="bg-white border border-gray-100 text-[11px] p-2 rounded-lg w-full outline-none"
-                          >
-                            {prestations.map(p => (
-                              <option key={p.id} value={p.id}>{p.name} ({p.base_price}€)</option>
-                            ))}
-                          </select>
+                        <div className="flex-1 flex flex-col md:flex-row gap-2">
+                          <div className="w-full md:w-1/2">
+                            <select 
+                              value={line.prestation_id}
+                              onChange={e => updateLineValue(index, 'prestation_id', e.target.value)}
+                              className="bg-white border border-gray-100 text-[11px] p-2 rounded-lg w-full outline-none"
+                            >
+                              <option value="custom">[ Saisie Libre / Option Personnalisée ]</option>
+                              {prestations.map(p => (
+                                <option key={p.id} value={p.id}>{p.name} ({p.base_price}€)</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {line.prestation_id === 'custom' && (
+                            <div className="flex-1">
+                              <input 
+                                type="text"
+                                required
+                                value={line.custom_name || ''}
+                                onChange={e => updateLineValue(index, 'custom_name', e.target.value)}
+                                placeholder="Description personnalisée..."
+                                className="bg-white border border-gray-100 text-[11px] p-2 rounded-lg w-full outline-none font-medium text-slate-800"
+                              />
+                            </div>
+                          )}
                         </div>
 
                         <div className="w-20">
