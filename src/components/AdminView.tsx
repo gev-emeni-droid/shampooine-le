@@ -1047,6 +1047,59 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     }
   };
 
+  // Helper to check if a start time crosses night hours (surcharged)
+  const isNightShiftCrossed = (startHm: string): boolean => {
+    if (!startHm) return false;
+    if (surchargeActive === false) return false;
+
+    const getMinutes = (hm: string): number => {
+      const [hours, minutes] = hm.split(':').map(Number);
+      return hours * 60 + (minutes || 0);
+    };
+
+    const currentMinutes = getMinutes(startHm);
+    const startLimitMinutes = getMinutes(surchargeStart);
+    const endLimitMinutes = getMinutes(surchargeEnd);
+
+    if (startLimitMinutes > endLimitMinutes) {
+      // Overnight (e.g. 19:00 to 06:00)
+      return currentMinutes >= startLimitMinutes || currentMinutes < endLimitMinutes;
+    } else {
+      // Same day (e.g. 08:00 to 12:00)
+      return currentMinutes >= startLimitMinutes && currentMinutes < endLimitMinutes;
+    }
+  };
+
+  // Re-adjust edit lines based on whether current start time is night time or not
+  const [previousStartWasNight, setPreviousStartWasNight] = useState<boolean>(false);
+
+  const applyNightSurchargeToLines = (startTime: string, linesList: typeof editApptLines) => {
+    const isNight = isNightShiftCrossed(startTime);
+    const multiplier = isNight ? (1 + surchargePct / 100) : 1.0;
+    
+    // We update unit_price of lines by applying or removing surcharge
+    return linesList.map(line => {
+      // Clean name from previous night surcharge notes
+      const cleanName = line.prestation_name.replace(/ \[MAJORATION DE NIGHT.*?\]/g, "").replace(/ \[MAJ\. NUIT.*?\]/g, "");
+      
+      // Let's deduce base unit price: if previous was night, we divide by (1 + surchargePct/100)
+      let basePrice = line.unit_price;
+      if (previousStartWasNight) {
+        basePrice = Number((line.unit_price / (1 + surchargePct / 100)).toFixed(2));
+      }
+
+      const finalUnitPrice = Number((basePrice * multiplier).toFixed(2));
+      const nameWithNote = isNight ? `${cleanName} [MAJ. NUIT +${surchargePct}%]` : cleanName;
+
+      return {
+        ...line,
+        prestation_name: nameWithNote,
+        unit_price: finalUnitPrice,
+        total_price: Number((finalUnitPrice * line.quantity).toFixed(2))
+      };
+    });
+  };
+
   // Open Edit Appointment Modal and pre-fetch lines
   const handleOpenEditAppointment = async (appt: RendezVousPlanning) => {
     setEditingAppt(appt);
@@ -1061,6 +1114,9 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     setLastMinutePrestationId('');
     setLastMinuteQty(1);
 
+    const isNight = isNightShiftCrossed(appt.start_time);
+    setPreviousStartWasNight(isNight);
+
     try {
       const lines = await apiService.getLignesDocument(appt.devis_facture_id);
       setEditApptLines(lines.map(l => ({
@@ -1074,6 +1130,14 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       setEditApptLines([]);
     }
     setEditApptModal(true);
+  };
+
+  // Trigger recalculation when form fields change (heure de debut)
+  const handleEditStartTimeChange = (newTime: string) => {
+    const nextLines = applyNightSurchargeToLines(newTime, editApptLines);
+    setEditApptLines(nextLines);
+    setPreviousStartWasNight(isNightShiftCrossed(newTime));
+    setEditApptForm({ ...editApptForm, start_time: newTime });
   };
 
   // Dynamic lines updates inside appointment editing modal
@@ -1097,6 +1161,9 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   };
 
   const addLastMinutePrestation = () => {
+    const isNightNow = isNightShiftCrossed(editApptForm.start_time);
+    const surchargeMultiplier = isNightNow ? (1 + surchargePct / 100) : 1.0;
+
     if (lineComposeMode === 'catalogue') {
       if (!lastMinutePrestationId) {
         onToast("Veuillez sélectionner une prestation.", "info");
@@ -1108,10 +1175,14 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
         const cl = df ? clients.find(c => c.id === df.client_id) : null;
         const factor = cl?.type_client === 'professionnel' ? 1.25 : 1.0;
         const basePrice = found.prix_unitaire !== undefined ? found.prix_unitaire : found.base_price;
-        const finalPrice = basePrice * factor;
+        
+        // Apply professional factor & possible night surcharge multiplier
+        const finalPrice = Number((basePrice * factor * surchargeMultiplier).toFixed(2));
+        const nameSuffix = cl?.type_client === 'professionnel' ? ' (Grade Professionnel)' : '';
+        const nightSuffix = isNightNow ? ` [MAJ. NUIT +${surchargePct}%]` : '';
 
         const newLine = {
-          prestation_name: `${found.name}${cl?.type_client === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
+          prestation_name: `${found.name}${nameSuffix}${nightSuffix}`,
           quantity: lastMinuteQty,
           unit_price: finalPrice,
           total_price: Number((finalPrice * lastMinuteQty).toFixed(2))
@@ -1126,11 +1197,15 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
         onToast("Veuillez renseigner le libellé de la prestation.", "info");
         return;
       }
+      
+      const finalPrice = Number((customLinePrice * surchargeMultiplier).toFixed(2));
+      const nightSuffix = isNightNow ? ` [MAJ. NUIT +${surchargePct}%]` : '';
+
       const newLine = {
-        prestation_name: customLineName,
+        prestation_name: `${customLineName}${nightSuffix}`,
         quantity: customLineQty,
-        unit_price: customLinePrice,
-        total_price: Number((customLinePrice * customLineQty).toFixed(2))
+        unit_price: finalPrice,
+        total_price: Number((finalPrice * customLineQty).toFixed(2))
       };
       setEditApptLines([...editApptLines, newLine]);
       setCustomLineName('');
@@ -4963,7 +5038,7 @@ export default {
                     type="time"
                     required
                     value={editApptForm.start_time}
-                    onChange={e => setEditApptForm({ ...editApptForm, start_time: e.target.value })}
+                    onChange={e => handleEditStartTimeChange(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
                   />
                 </div>
@@ -5196,7 +5271,33 @@ export default {
               <div className="pt-2 border-t border-dashed border-gray-200">
                 <button
                   type="button"
-                  onClick={() => setSignatureOnSpotMode(true)}
+                  onClick={async () => {
+                    // 1. Sauvegarder d'abord les modifications en base
+                    try {
+                      const totalAmount = editApptLines.reduce((acc, current) => acc + current.total_price, 0);
+                      const apptData: Partial<RendezVousPlanning> = {
+                        title: editApptForm.title,
+                        date: editApptForm.date,
+                        start_time: editApptForm.start_time,
+                        duration_minutes: Number(editApptForm.duration_minutes),
+                        assigned_employee_ids: editApptForm.assigned_employee_ids,
+                        notes: editApptForm.notes,
+                        final_price: totalAmount
+                      };
+                      await apiService.updateAppointmentFull(
+                        editingAppt.id,
+                        apptData,
+                        editingAppt.devis_facture_id,
+                        editApptLines
+                      );
+                      // Mettre à jour l'état local du rendez-vous d'intervention
+                      setEditingAppt({ ...editingAppt, ...apptData });
+                      setSignatureOnSpotMode(true);
+                    } catch (err) {
+                      console.error(err);
+                      onToast("Erreur lors de la sauvegarde intermédiaire avant signature.", "info");
+                    }
+                  }}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3.5 rounded-2xl text-xs transition-transform cursor-pointer text-center shadow-lg shadow-emerald-500/15 active:scale-[0.98] flex items-center justify-center space-x-2"
                   title="Permet au client de signer directement avec son doigt pour valider les modifications sur votre smartphone"
                 >
