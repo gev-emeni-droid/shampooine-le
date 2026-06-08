@@ -2508,6 +2508,17 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                 <p className="font-bold text-slate-900">{cl.last_name.toUpperCase()} {cl.first_name}</p>
                                 <p className="text-slate-500">{cl.email}</p>
                                 <p className="text-slate-500">{cl.phone}</p>
+                                <button 
+                                  onClick={() => {
+                                    setSelectedClient(cl);
+                                    setActiveTab('clients');
+                                    setEditClientForm(cl);
+                                    setEditClientModal(true);
+                                  }}
+                                  className="mt-2 text-[10px] font-bold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded-lg border border-sky-100 flex items-center gap-1 cursor-pointer transition-all"
+                                >
+                                  <span>👤 Consulter / Modifier la Fiche Client</span>
+                                </button>
                               </div>
                             ) : (
                               <p className="text-slate-500 mt-1">Inconnu</p>
@@ -2535,47 +2546,187 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                       {(() => {
                         const cl = clients.find(c => c.id === viewingDoc.client_id);
                         const isB2BDoc = cl?.type_client === 'professionnel';
-                        const totalTTC = viewingDoc.total_amount;
-                        // Recalcul depuis les lignes (unit_price stocké en HT pour B2B)
-                        const totalHTDoc = viewingDoc.total_ht ?? (isB2BDoc ? totalTTC / 1.20 : totalTTC);
-                        const tvaDoc = isB2BDoc ? totalTTC - totalHTDoc : 0;
+                        
+                        // Recalcul local direct des totaux si c'est un Brouillon modifiable
+                        const localTTC = viewingLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                        const localHT = isB2BDoc ? localTTC / 1.20 : localTTC;
+                        const localTVA = isB2BDoc ? localTTC - localHT : 0;
+                        const isBrouillon = viewingDoc.status === 'Brouillon';
+
+                        const updateLocalLineQty = async (index: number, newQty: number) => {
+                          const updatedLines = [...viewingLines];
+                          const line = updatedLines[index];
+                          line.quantity = Math.max(1, newQty);
+                          line.total_price = line.quantity * line.unit_price;
+                          setViewingLines(updatedLines);
+
+                          const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                          const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                          const updatedDoc = {
+                            ...viewingDoc,
+                            total_amount: calculatedTTC,
+                            total_ht: calculatedHT,
+                            total_ttc: calculatedTTC
+                          };
+                          setViewingDoc(updatedDoc);
+                          try {
+                            await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                            // refresh global documents list
+                            const freshDocs = await apiService.getDevisFactures();
+                            setDocuments(freshDocs);
+                          } catch(err) {
+                            console.error(err);
+                          }
+                        };
+
+                        const deleteLocalLine = async (index: number) => {
+                          if (viewingLines.length <= 1) {
+                            onToast("Un document doit posséder au moins une ligne de prestation.", "info");
+                            return;
+                          }
+                          const updatedLines = viewingLines.filter((_, idx) => idx !== index);
+                          setViewingLines(updatedLines);
+
+                          const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                          const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                          const updatedDoc = {
+                            ...viewingDoc,
+                            total_amount: calculatedTTC,
+                            total_ht: calculatedHT,
+                            total_ttc: calculatedTTC
+                          };
+                          setViewingDoc(updatedDoc);
+                          try {
+                            await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                            const freshDocs = await apiService.getDevisFactures();
+                            setDocuments(freshDocs);
+                            onToast("Ligne supprimée !", "success");
+                          } catch(err) {
+                            console.error(err);
+                          }
+                        };
+
+                        const addPrestationToBrouillon = async (prestationId: string) => {
+                          const p = prestations.find(x => x.id === prestationId);
+                          if (!p) return;
+                          
+                          const factor = isB2BDoc ? 1.25 : 1.0;
+                          const unitVal = p.base_price * factor;
+                          const priceVal = isB2BDoc ? unitVal / 1.20 : unitVal;
+
+                          const newLine = {
+                            devis_facture_id: viewingDoc.id,
+                            prestation_name: p.name,
+                            quantity: 1,
+                            unit_price: priceVal,
+                            total_price: priceVal
+                          } as any;
+
+                          const updatedLines = [...viewingLines, newLine];
+                          setViewingLines(updatedLines);
+
+                          const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                          const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                          const updatedDoc = {
+                            ...viewingDoc,
+                            total_amount: calculatedTTC,
+                            total_ht: calculatedHT,
+                            total_ttc: calculatedTTC
+                          };
+                          setViewingDoc(updatedDoc);
+                          try {
+                            await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                            const freshDocs = await apiService.getDevisFactures();
+                            setDocuments(freshDocs);
+                            onToast("Prestation ajoutée au brouillon !", "success");
+                          } catch(err) {
+                            console.error(err);
+                          }
+                        };
+
                         return (
                           <>
                             <table className="w-full text-xs text-left">
                               <thead>
                                 <tr className="border-b border-gray-100 text-slate-400 font-bold uppercase text-[9px]">
                                   <th className="py-2">Désignation de la prestation</th>
-                                  <th className="py-2 text-center">Qté</th>
+                                  <th className="py-2 text-center w-24">Qté</th>
                                   <th className="py-2 text-right">{isB2BDoc ? 'Prix Unit. HT' : 'Prix Unit. TTC'}</th>
                                   <th className="py-2 text-right">{isB2BDoc ? 'Total Ligne HT' : 'Total Ligne TTC'}</th>
+                                  {isBrouillon && <th className="py-2 text-center w-12">Actions</th>}
                                 </tr>
                               </thead>
                               <tbody>
                                 {viewingLines.map((line, idx) => (
                                   <tr key={idx} className="border-b border-slate-50 text-slate-800">
                                     <td className="py-2.5 font-semibold text-slate-900">{line.prestation_name}</td>
-                                    <td className="py-2.5 text-center">{line.quantity}</td>
+                                    <td className="py-2.5 text-center">
+                                      {isBrouillon ? (
+                                        <input 
+                                          type="number" 
+                                          min="1" 
+                                          value={line.quantity} 
+                                          onChange={(e) => updateLocalLineQty(idx, parseInt(e.target.value) || 1)}
+                                          className="w-14 text-center px-1 py-0.5 rounded border border-gray-200 outline-none focus:ring-1 focus:ring-sky-500"
+                                        />
+                                      ) : (
+                                        line.quantity
+                                      )}
+                                    </td>
                                     <td className="py-2.5 text-right">{line.unit_price.toFixed(2)} €</td>
                                     <td className="py-2.5 text-right font-bold text-slate-900">{line.total_price.toFixed(2)} €</td>
+                                    {isBrouillon && (
+                                      <td className="py-2.5 text-center">
+                                        <button 
+                                          onClick={() => deleteLocalLine(idx)}
+                                          className="text-red-500 hover:text-red-700 p-1 cursor-pointer transition-colors"
+                                          title="Supprimer la ligne"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </td>
+                                    )}
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
+
+                            {/* Brouillon additions bar */}
+                            {isBrouillon && (
+                              <div className="bg-sky-50/50 p-4 rounded-2xl border border-sky-100/60 mt-4 flex flex-col sm:flex-row items-center gap-3">
+                                <span className="text-[10px] font-extrabold text-sky-700 uppercase shrink-0">Ajouter au brouillon :</span>
+                                <select
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      addPrestationToBrouillon(e.target.value);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  className="flex-1 bg-white border border-sky-100 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-sky-500"
+                                  defaultValue=""
+                                >
+                                  <option value="" disabled>Sélectionner une prestation du catalogue...</option>
+                                  {prestations.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name} ({p.base_price.toFixed(2)} €)</option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
 
                             <div className="flex flex-col items-end space-y-1 pt-4 border-t border-gray-100">
                               {isB2BDoc ? (
                                 <>
                                   <div className="text-xs text-slate-400 flex justify-between w-72">
                                     <span>Total Global HT :</span>
-                                    <span className="text-slate-900 font-semibold">{totalHTDoc.toFixed(2)} €</span>
+                                    <span className="text-slate-900 font-semibold">{localHT.toFixed(2)} €</span>
                                   </div>
                                   <div className="text-xs text-slate-400 flex justify-between w-72">
                                     <span>TVA (20%) :</span>
-                                    <span className="text-slate-900 font-semibold">{tvaDoc.toFixed(2)} €</span>
+                                    <span className="text-slate-900 font-semibold">{localTVA.toFixed(2)} €</span>
                                   </div>
                                   <div className="text-sm font-bold text-indigo-700 flex justify-between w-72 pt-2 border-t border-slate-100">
                                     <span>Total Global TTC (Net à payer) :</span>
-                                    <span className="text-indigo-600 text-base font-black">{totalTTC.toFixed(2)} €</span>
+                                    <span className="text-indigo-600 text-base font-black">{localTTC.toFixed(2)} €</span>
                                   </div>
                                   <div className="mt-1">
                                     <span className="text-[8px] text-indigo-400 font-medium italic">🏢 Document B2B — TVA 20% détaillée</span>
@@ -2585,7 +2736,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                 <>
                                   <div className="text-xs text-slate-400 flex justify-between w-64">
                                     <span>Total global TTC :</span>
-                                    <span className="text-slate-900 font-semibold">{totalTTC.toFixed(2)} €</span>
+                                    <span className="text-slate-900 font-semibold">{localTTC.toFixed(2)} €</span>
                                   </div>
                                   <div className="text-xs text-slate-400 flex justify-between w-64">
                                     <span>TVA non applicable (art. 293B du CGI) :</span>
@@ -2593,7 +2744,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                   </div>
                                   <div className="text-sm font-bold text-slate-900 flex justify-between w-64 pt-2 border-t border-slate-100">
                                     <span>Total Net à payer (TTC) :</span>
-                                    <span className="text-sky-600 text-base font-black">{totalTTC.toFixed(2)} €</span>
+                                    <span className="text-sky-600 text-base font-black">{localTTC.toFixed(2)} €</span>
                                   </div>
                                 </>
                               )}
