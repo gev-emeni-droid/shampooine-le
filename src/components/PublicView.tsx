@@ -507,14 +507,18 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                   alt="Après nettoyage" 
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
-                <div className="absolute top-4 left-4 z-10 flex justify-between items-center w-[calc(100%-2rem)]">
-                  <span className="bg-sky-500/90 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm">APRÈS SHAMPOOINE</span>
+                <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center">
+                  <span className="bg-sky-500/90 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm">
+                    APRÈS {entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE'}
+                  </span>
                   <div className="flex space-x-0.5 bg-black/35 p-1 rounded-lg backdrop-blur-sm">
                     {[1, 2, 3, 4, 5].map(i => <Star key={i} className="w-3 h-3 text-amber-400 fill-current" />)}
                   </div>
                 </div>
                 <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
-                  <span className="text-[10px] text-white font-extrabold bg-sky-500/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">DÉSINFICTÉ &amp; RAVIVÉ 100% — Velours préservé</span>
+                  <span className="text-[10px] text-white font-extrabold bg-sky-500/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
+                    DÉSINFICTÉ &amp; RAVIVÉ 100% — Velours préservé
+                  </span>
                 </div>
               </div>
 
@@ -523,18 +527,22 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                 className="absolute inset-0 w-full h-full overflow-hidden transition-all duration-75"
                 style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
               >
-                <div className="absolute inset-0 w-full h-full min-w-[32rem]">
+                {/* We use exactly the parent dimensions to align images perfectly */}
+                <div className="absolute inset-0 w-full h-full">
                   <img 
                     src="/media__1780928603260.png" 
                     alt="Avant nettoyage" 
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-                    style={{ width: '100%', height: '100%' }}
                   />
                   <div className="absolute top-4 left-4 z-10">
-                    <span className="bg-amber-800/95 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">AVANT NETTOYAGE</span>
+                    <span className="bg-amber-800/95 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">
+                      AVANT {entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE'}
+                    </span>
                   </div>
                   <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
-                    <span className="text-[10px] text-white font-extrabold bg-amber-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">TACHES INCUSTÉES, AURÉOLES &amp; SÉBUM</span>
+                    <span className="text-[10px] text-white font-extrabold bg-amber-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
+                      TACHES INCRUSTÉES, AURÉOLES &amp; SÉBUM
+                    </span>
                   </div>
                 </div>
               </div>
