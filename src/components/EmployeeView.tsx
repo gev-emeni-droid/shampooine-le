@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Employe, RendezVousPlanning, Client, DevisFacture } from '../types';
+import { Employe, RendezVousPlanning, Client, DevisFacture, Prestation, LigneDocument, DocumentPhoto, AppointmentStatus } from '../types';
 import { apiService } from '../services/apiClient';
 import { 
   Calendar, 
@@ -10,14 +10,13 @@ import {
   Clock, 
   Search, 
   LogOut, 
-  ChevronLeft, 
-  ChevronRight, 
   Briefcase, 
   FileText,
   Compass,
   CheckCircle2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Camera
 } from 'lucide-react';
 
 interface EmployeeViewProps {
@@ -31,6 +30,7 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
   const [appointments, setAppointments] = useState<RendezVousPlanning[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [documents, setDocuments] = useState<DevisFacture[]>([]);
+  const [prestations, setPrestations] = useState<Prestation[]>([]);
   const [entrepriseConfig, setEntrepriseConfig] = useState<any>(propConfig || null);
   const [loading, setLoading] = useState(true);
 
@@ -56,16 +56,18 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
   const loadEmployeeData = async () => {
     try {
       setLoading(true);
-      const [apptRes, clientRes, docRes, configRes] = await Promise.all([
+      const [apptRes, clientRes, docRes, configRes, prestationsRes] = await Promise.all([
         apiService.getAppointments(),
         apiService.getClients(),
         apiService.getDevisFactures(),
-        propConfig ? Promise.resolve(propConfig) : apiService.getEntrepriseConfig()
+        propConfig ? Promise.resolve(propConfig) : apiService.getEntrepriseConfig(),
+        apiService.getPrestations()
       ]);
       setAppointments(apptRes);
       setClients(clientRes);
       setDocuments(docRes);
       setEntrepriseConfig(configRes);
+      setPrestations(prestationsRes || []);
     } catch (err) {
       console.error(err);
       onToast("Impossible de charger les données du technicien.", "info");
@@ -542,6 +544,7 @@ export default function EmployeeView({ employee, onLogout, onToast, entrepriseCo
 // EMPLOYEE TERRAIN WORKFLOW MANAGER (PHOTOS, LIVE LINES CALCULATIONS, CHECKOUT)
 // =========================================================================
 import { Trash, Plus, Check } from 'lucide-react';
+
 
 interface EmployeePrestationManagerProps {
   appt: RendezVousPlanning;

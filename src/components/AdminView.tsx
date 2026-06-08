@@ -2811,9 +2811,22 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                 /* MAIN LIST VIEW */
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-semibold text-slate-500">Filtrer par type :</span>
-                      {/* We could add quick click hooks */}
+                    <div className="flex flex-1 flex-col sm:flex-row gap-3 sm:items-center">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-semibold text-slate-500">Filtrer par type :</span>
+                      </div>
+                      <div className="relative flex-1 max-w-md">
+                        <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                          <Search className="h-4 w-4 text-slate-400" />
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Rechercher par numéro, client, téléphone..."
+                          value={documentSearchTerm}
+                          onChange={e => setDocumentSearchTerm(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2 text-xs bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all shadow-sm"
+                        />
+                      </div>
                     </div>
 
                     <button 
@@ -2851,67 +2864,78 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                           </tr>
                         </thead>
                         <tbody>
-                          {documents.map(doc => {
-                            const cl = clients.find(c => c.id === doc.client_id);
-                            return (
-                              <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                                <td className="p-4 font-bold text-slate-900">
-                                  {doc.number}
-                                </td>
-                                <td className="p-4">
-                                  <span className={`text-[9px] font-bold uppercase px-2.5 py-0.5 rounded-full ${
-                                    doc.type === 'devis' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                                  }`}>
-                                    {doc.type}
-                                  </span>
-                                </td>
-                                <td className="p-4">
-                                  {cl ? (
-                                    <div>
-                                      <p className="font-bold text-slate-800">{cl.last_name.toUpperCase()} {cl.first_name}</p>
-                                      <p className="text-[10px] text-slate-400">{cl.phone}</p>
+                          {documents
+                            .filter(doc => {
+                              const cl = clients.find(c => c.id === doc.client_id);
+                              const searchLower = documentSearchTerm.toLowerCase();
+                              if (!searchLower) return true;
+                              const numMatch = doc.number.toLowerCase().includes(searchLower);
+                              const typeMatch = doc.type.toLowerCase().includes(searchLower);
+                              const clientNameMatch = cl ? `${cl.first_name} ${cl.last_name}`.toLowerCase().includes(searchLower) : false;
+                              const phoneMatch = cl ? cl.phone.includes(searchLower) : false;
+                              return numMatch || typeMatch || clientNameMatch || phoneMatch;
+                            })
+                            .map(doc => {
+                              const cl = clients.find(c => c.id === doc.client_id);
+                              return (
+                                <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                  <td className="p-4 font-bold text-slate-900">
+                                    {doc.number}
+                                  </td>
+                                  <td className="p-4">
+                                    <span className={`text-[9px] font-bold uppercase px-2.5 py-0.5 rounded-full ${
+                                      doc.type === 'devis' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                                    }`}>
+                                      {doc.type}
+                                    </span>
+                                  </td>
+                                  <td className="p-4">
+                                    {cl ? (
+                                      <div>
+                                        <p className="font-bold text-slate-800">{cl.last_name.toUpperCase()} {cl.first_name}</p>
+                                        <p className="text-[10px] text-slate-400">{cl.phone}</p>
+                                      </div>
+                                    ) : (
+                                      <p className="text-slate-400">Inconnu</p>
+                                    )}
+                                  </td>
+                                  <td className="p-4 text-slate-500">
+                                    {doc.date}
+                                  </td>
+                                  <td className="p-4">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      doc.status === 'Payé' ? 'bg-green-100 text-green-700' :
+                                      doc.status === 'Signé/Accepté' ? 'bg-sky-100 text-sky-700' :
+                                      doc.status === 'Facturé' ? 'bg-indigo-100 text-indigo-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    }`}>
+                                      {doc.status}
+                                    </span>
+                                  </td>
+                                  <td className="p-4 text-right font-black text-slate-950">
+                                    {doc.total_amount.toFixed(2)} €
+                                  </td>
+                                  <td className="p-4 text-right">
+                                    <div className="flex justify-end items-center space-x-1">
+                                      <button 
+                                        onClick={() => handleViewDoc(doc)}
+                                        className="p-2 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-50 cursor-pointer"
+                                        title="Ouvrir le devis/facture"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleDeleteDocument(doc.id, doc.number)}
+                                        className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 cursor-pointer"
+                                        title="Supprimer"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
                                     </div>
-                                  ) : (
-                                    <p className="text-slate-400">Inconnu</p>
-                                  )}
-                                </td>
-                                <td className="p-4 text-slate-500">
-                                  {doc.date}
-                                </td>
-                                <td className="p-4">
-                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    doc.status === 'Payé' ? 'bg-green-100 text-green-700' :
-                                    doc.status === 'Signé/Accepté' ? 'bg-sky-100 text-sky-700' :
-                                    doc.status === 'Facturé' ? 'bg-indigo-100 text-indigo-700' :
-                                    'bg-gray-100 text-gray-700'
-                                  }`}>
-                                    {doc.status}
-                                  </span>
-                                </td>
-                                <td className="p-4 text-right font-black text-slate-950">
-                                  {doc.total_amount.toFixed(2)} €
-                                </td>
-                                <td className="p-4 text-right">
-                                  <div className="flex justify-end items-center space-x-1">
-                                    <button 
-                                      onClick={() => handleViewDoc(doc)}
-                                      className="p-2 text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-50 cursor-pointer"
-                                      title="Ouvrir le devis/facture"
-                                    >
-                                      <Eye className="w-4 h-4" />
-                                    </button>
-                                    <button 
-                                      onClick={() => handleDeleteDocument(doc.id, doc.number)}
-                                      className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-red-50 cursor-pointer"
-                                      title="Supprimer"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
                     </div>

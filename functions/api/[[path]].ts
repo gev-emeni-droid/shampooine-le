@@ -1216,25 +1216,28 @@ app.post('/admin/documents/renvoyer', async (c) => {
       return c.json({ error: `Email client invalide ou manquant: "${client.email}"` }, 400);
     }
 
-    // 3. Fetch email configuration for devis or facture
+    // 3. Fetch email config, company config, document lines
     const targetFlux = doc.type === 'devis' ? 'devis_sending' : 'facture_sending';
-    const config = await c.env.DB.prepare(
-      'SELECT * FROM configurations_emails WHERE flux_type = ?'
-    )
-      .bind(targetFlux)
-      .first<any>();
+    const [emailConfig, companyConfig, { results: lines }] = await Promise.all([
+      c.env.DB.prepare('SELECT * FROM configurations_emails WHERE flux_type = ?').bind(targetFlux).first<any>(),
+      c.env.DB.prepare('SELECT * FROM entreprise_config WHERE id = "default"').first<any>(),
+      c.env.DB.prepare('SELECT * FROM lignes_documents WHERE document_id = ?').bind(documentId).all<any>()
+    ]);
 
-    const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
     const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
+    const isB2B = client.type_client === 'professionnel';
+    const totalTTC = doc.total_amount || 0;
+    const totalHT = doc.total_ht ?? (isB2B ? totalTTC / 1.20 : totalTTC);
+    const tvaAmt = isB2B ? totalTTC - totalHT : 0;
 
-    let subject = config ? config.sujet : (doc.type === 'devis' ? `Votre devis de prestation - ${companyName}` : `Votre facture de prestation - ${companyName}`);
-    let body = config
-      ? config.corps_message
+    // 4. Build email subject/body
+    let subject = emailConfig ? emailConfig.sujet : (doc.type === 'devis' ? `Votre devis de prestation - ${companyName}` : `Votre facture de prestation - ${companyName}`);
+    let body = emailConfig
+      ? emailConfig.corps_message
       : (doc.type === 'devis'
         ? 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}'
         : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre facture concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}');
 
-    // 4. Inject dynamic variables
     const reqOrigin = origin || new URL(c.req.url).origin;
     const documentLink = `${reqOrigin}/?devis_id=${doc.id}`;
 
@@ -1243,8 +1246,8 @@ app.post('/admin/documents/renvoyer', async (c) => {
       NOM_CLIENT: client.last_name || '',
       TYPE_DOCUMENT: doc.type === 'devis' ? 'Devis' : 'Facture',
       NUMERO_DOCUMENT: doc.number || doc.id,
-      TOTAL_DOCUMENT: `${(doc.total_amount || 0).toFixed(2)} €`,
-      TOTAL: `${(doc.total_amount || 0).toFixed(2)} €`,
+      TOTAL_DOCUMENT: `${totalTTC.toFixed(2)} €`,
+      TOTAL: `${totalTTC.toFixed(2)} €`,
       LIEN_UNIQUE: documentLink,
       LIEN_DOCUMENT: documentLink,
       NOM_ENTREPRISE: companyName
@@ -1256,30 +1259,157 @@ app.post('/admin/documents/renvoyer', async (c) => {
       body = body.replace(new RegExp(tag, 'g'), val);
     });
 
-    // 5. Send email via Resend
-    const from = `${companyName} <notifications@l-iamani.com>`;
+    // 5. ✅ GÉNÉRATION DU HTML DU DOCUMENT (pièce jointe PDF)
+    const docTypeLabel = doc.type === 'devis' ? 'DEVIS' : 'FACTURE';
+    const docColor = doc.type === 'devis' ? '#854d0e' : '#065f46';
+    const docBg = doc.type === 'devis' ? '#fef9c3' : '#d1fae5';
 
+    // Détection majoration nuit
+    const hasNightLine = lines.some((l: any) => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+    const baseLines = lines.filter((l: any) => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+    const nightLine = lines.find((l: any) => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+    const baseTotal = baseLines.reduce((acc: number, l: any) => acc + (l.total_price || 0), 0);
+
+    const linesHtml = lines.map((line: any) => {
+      const isNightL = line.prestation_name.startsWith('Majoration Horaires de Nuit');
+      const cleanName = line.prestation_name.replace(/ \[MAJ\. NUIT.*?\]/g, '');
+      return `<tr style="border-bottom:1px solid #f1f5f9;${isNightL ? 'background:#fffbeb;' : ''}">
+        <td style="padding:10px 8px 10px 0;font-weight:${isNightL ? 'bold' : '600'};color:${isNightL ? '#92400e' : '#1e293b'};">${isNightL ? '🌙 ' : ''}${cleanName}</td>
+        <td style="padding:10px 6px;text-align:center;color:#64748b;">${line.quantity}</td>
+        <td style="padding:10px 6px;text-align:right;color:#64748b;font-family:monospace;">${(line.unit_price || 0).toFixed(2)} €</td>
+        <td style="padding:10px 0 10px 8px;text-align:right;font-weight:bold;color:${isNightL ? '#92400e' : '#1e293b'};font-family:monospace;">${(line.total_price || 0).toFixed(2)} €</td>
+      </tr>`;
+    }).join('');
+
+    const totalsHtml = isB2B
+      ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Total HT :</span><span>${totalHT.toFixed(2)} €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>TVA (20%) :</span><span>${tvaAmt.toFixed(2)} €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;color:#4f46e5;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer TTC :</span><span>${totalTTC.toFixed(2)} €</span></div>`
+      : `${hasNightLine ? `
+         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Sous-total prestations :</span><span>${baseTotal.toFixed(2)} €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:bold;color:#b45309;background:#fef3c7;padding:5px 8px;border-radius:6px;margin:3px 0;"><span>🌙 Majoration nuit :</span><span>+${(nightLine?.total_price || 0).toFixed(2)} €</span></div>` : ''}
+         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>TVA non applicable (art. 293B CGI) :</span><span>0.00 €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900;color:#0284c7;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer (TTC) :</span><span>${totalTTC.toFixed(2)} €</span></div>`;
+
+    const logoHtml = companyConfig?.logo_url
+      ? `<img src="${companyConfig.logo_url}" style="height:52px;object-fit:contain;border-radius:8px;" />`
+      : `<div style="background:linear-gradient(135deg,#38bdf8,#3b82f6);padding:10px 14px;border-radius:10px;color:white;font-weight:900;font-size:20px;">✦</div>`;
+
+    const docHtml = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<title>${docTypeLabel} #${doc.number} - ${companyName}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:white;color:#1e293b;padding:28px;font-size:12px;}
+table{width:100%;border-collapse:collapse;}
+th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:800;padding:7px 0;border-bottom:1px solid #e2e8f0;}
+th:not(:first-child){text-align:right;}
+@media print{body{padding:14px;}}
+</style>
+</head>
+<body>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:18px;border-bottom:2px solid #f1f5f9;margin-bottom:22px;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    ${logoHtml}
+    <div>
+      <div style="font-size:17px;font-weight:900;color:#1e293b;">${companyName}</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Nettoyage haut de gamme de textiles d'ameublement</div>
+      <div style="font-size:10px;color:#64748b;font-family:monospace;">${companyConfig?.telephone || ''}</div>
+    </div>
+  </div>
+  <div style="text-align:right;">
+    <div style="background:${docBg};color:${docColor};font-size:10px;font-weight:900;padding:4px 12px;border-radius:20px;text-transform:uppercase;display:inline-block;">${docTypeLabel} #${doc.number}</div>
+    <div style="font-size:20px;font-weight:900;color:#1e293b;margin-top:5px;">${totalTTC.toFixed(2)} €</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;background:#f8fafc;padding:14px;border-radius:10px;">
+  <div>
+    <div style="font-size:8px;font-weight:800;text-transform:uppercase;color:#94a3b8;margin-bottom:5px;">Émetteur / Prestataire</div>
+    <div style="font-weight:700;color:#1e293b;">${companyName}</div>
+    <div style="color:#64748b;margin-top:2px;">${companyConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</div>
+    <div style="color:#64748b;">${companyConfig?.telephone || ''}</div>
+  </div>
+  <div>
+    <div style="font-size:8px;font-weight:800;text-transform:uppercase;color:#94a3b8;margin-bottom:5px;">Destinataire (Client)</div>
+    <div style="font-weight:700;color:#1e293b;">${(client.last_name || '').toUpperCase()} ${client.first_name || ''}</div>
+    <div style="color:#64748b;margin-top:2px;">${client.email || ''}</div>
+    <div style="color:#64748b;">${client.phone || ''}</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;">
+  <div><div style="font-size:8px;color:#94a3b8;font-weight:800;text-transform:uppercase;">Date d'émission</div><div style="font-weight:700;margin-top:2px;">${doc.date}</div></div>
+  <div><div style="font-size:8px;color:#94a3b8;font-weight:800;text-transform:uppercase;">Date d'échéance</div><div style="font-weight:700;margin-top:2px;">${doc.due_date}</div></div>
+  <div><div style="font-size:8px;color:#94a3b8;font-weight:800;text-transform:uppercase;">Statut</div><div style="font-weight:700;color:#0284c7;margin-top:2px;">${doc.status}</div></div>
+</div>
+
+<table style="margin-bottom:18px;">
+  <thead><tr>
+    <th>Désignation de la prestation</th>
+    <th style="text-align:center;">Qté</th>
+    <th style="text-align:right;">${isB2B ? 'Prix Unit. HT' : 'Prix Unit. TTC'}</th>
+    <th style="text-align:right;">${isB2B ? 'Total HT' : 'Total TTC'}</th>
+  </tr></thead>
+  <tbody>${linesHtml}</tbody>
+</table>
+
+<div style="display:flex;flex-direction:column;align-items:flex-end;">${totalsHtml}</div>
+
+${doc.notes ? `<div style="background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;margin-top:18px;font-size:11px;color:#64748b;"><div style="font-size:8px;font-weight:800;text-transform:uppercase;color:#94a3b8;margin-bottom:3px;">Notes & conditions</div>${doc.notes}</div>` : ''}
+
+<div style="margin-top:28px;padding-top:14px;border-top:1px dashed #e2e8f0;text-align:center;font-size:8px;color:#94a3b8;">
+  <div style="font-weight:700;color:#475569;margin-bottom:3px;">${companyName} — ${companyConfig?.forme_juridique || 'SARL'} au Capital de ${companyConfig?.capital_social || '10 000 €'}</div>
+  <div>Siège Social : ${companyConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</div>
+  <div style="font-family:monospace;margin-top:2px;">SIRET : ${companyConfig?.siret || '123 456 789 00021'} | Code APE : ${companyConfig?.code_ape || '8121Z'} | TVA : ${companyConfig?.tva_intracommunautaire || 'FR 12 123456789'}</div>
+  <div style="margin-top:5px;font-size:7px;color:#cbd5e1;">Prestations d'injection-extraction et de détachage thermique. TVA non applicable en vertu de l'article 293B du CGI.</div>
+</div>
+</body>
+</html>`;
+
+    // ✅ Encodage base64 UTF-8 compatible (Cloudflare Workers)
+    const encoder = new TextEncoder();
+    const docBytes = encoder.encode(docHtml);
+    const base64Chunks: string[] = [];
+    const chunkSize = 8192;
+    for (let i = 0; i < docBytes.length; i += chunkSize) {
+      base64Chunks.push(String.fromCharCode(...docBytes.slice(i, i + chunkSize)));
+    }
+    const docBase64 = btoa(base64Chunks.join(''));
+    const attachmentFilename = `${docTypeLabel}-${doc.number || doc.id}.pdf`;
+
+    // 6. Email HTML body (corps du message)
+    const from = `${companyName} <notifications@l-iamani.com>`;
     let emailSent = false;
     let resendData: any = null;
     let resendError: any = null;
 
     if (resendApiKey) {
       const htmlBody = `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px;">
-          <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 20px 24px; border-radius: 12px; margin-bottom: 24px;">
-            <h2 style="color: white; font-weight: 800; margin: 0;">${companyName}</h2>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1e293b;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;">
+          <div style="background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:20px 24px;border-radius:12px;margin-bottom:24px;">
+            <h2 style="color:white;font-weight:800;margin:0;">${companyName}</h2>
           </div>
-          <div style="white-space: pre-wrap; line-height: 1.7; font-size: 14px; color: #374151;">
+          <div style="white-space:pre-wrap;line-height:1.7;font-size:14px;color:#374151;">
             ${body.replace(/\n/g, '<br/>')}
           </div>
-          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
-          <p style="font-size: 11px; color: #94a3b8; text-align: center;">
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px 18px;margin:24px 0;display:flex;align-items:center;gap:12px;">
+            <span style="font-size:22px;">📎</span>
+            <div>
+              <div style="font-weight:700;color:#0369a1;font-size:13px;">${attachmentFilename}</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">Document joint — ouvrez-le pour consulter et imprimer votre ${doc.type}.</div>
+            </div>
+          </div>
+          <hr style="border:none;border-top:1px solid #f1f5f9;margin:20px 0;"/>
+          <p style="font-size:11px;color:#94a3b8;text-align:center;margin:0;">
             Cet email a été envoyé automatiquement depuis votre espace ${companyName}.
           </p>
         </div>
       `;
 
-      console.log(`[Resend/renvoyer] Tentative vers: ${client.email} | sujet: ${subject}`);
+      console.log(`[Resend/renvoyer] Tentative vers: ${client.email} | sujet: ${subject} | pièce jointe: ${attachmentFilename}`);
 
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -1291,14 +1421,20 @@ app.post('/admin/documents/renvoyer', async (c) => {
           from,
           to: [client.email],
           subject,
-          html: htmlBody
+          html: htmlBody,
+          attachments: [
+            {
+              filename: attachmentFilename,
+              content: docBase64
+            }
+          ]
         })
       });
 
       resendData = await response.json() as any;
       if (response.ok) {
         emailSent = true;
-        console.log(`[Resend/renvoyer] ✅ Succes! ID: ${resendData.id}`);
+        console.log(`[Resend/renvoyer] ✅ Email + pièce jointe envoyés! ID: ${resendData.id}`);
       } else {
         resendError = resendData;
         console.error('[Resend/renvoyer] ERREUR:', JSON.stringify(resendData));
@@ -1309,7 +1445,7 @@ app.post('/admin/documents/renvoyer', async (c) => {
       emailSent = true;
     }
 
-    // 6. Update document status if it's currently 'Brouillon'
+    // 7. Update document status if currently 'Brouillon'
     let newStatus = doc.status;
     if (emailSent && (doc.status === 'Brouillon' || (doc.type === 'facture' && doc.status === 'Facturé'))) {
       newStatus = 'Envoyé au client';
@@ -1320,6 +1456,8 @@ app.post('/admin/documents/renvoyer', async (c) => {
       success: emailSent,
       newStatus,
       sentTo: client.email,
+      attachmentIncluded: true,
+      attachmentFilename,
       resendData,
       resendError,
       simulated: !resendApiKey

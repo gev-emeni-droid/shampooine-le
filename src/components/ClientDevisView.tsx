@@ -398,8 +398,8 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
       const isNight = isNightShiftCrossed(computedStartTime);
       const pct = corpConfig?.majorat_tarif_nuit_pct !== undefined ? corpConfig.majorat_tarif_nuit_pct : 25;
       const multiplier = isNight ? (1 + pct / 100) : 1;
-      const basePrice = document.total_amount;
-      const finalPrice = Math.round(basePrice * multiplier * 100) / 100;
+      const basePrice = document.total_amount;  // Toujours le prix BASE du document
+      const finalPrice = Math.round(basePrice * multiplier * 100) / 100;  // ✅ Prix MAJORÉ
 
       const newAppt: RendezVousPlanning = {
         id: `client-appt-${Date.now()}`,
@@ -475,7 +475,13 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
 
   // Active document and lines verified
   const activeDoc = document!;
-  const currentTotal = activeDoc.total_amount;
+  // ✅ CALCUL DYNAMIQUE : applique la majoration si créneau de nuit sélectionné
+  const nightPct = corpConfig?.majorat_tarif_nuit_pct !== undefined ? corpConfig.majorat_tarif_nuit_pct : 25;
+  const isCurrentSlotNight = selectedSlot ? isNightShiftCrossed(selectedSlot) : false;
+  const nightMultiplier = isCurrentSlotNight ? (1 + nightPct / 100) : 1;
+  const baseDocTotal = activeDoc.total_amount;
+  // currentTotal = montant affiché et envoyé à l'API (avec majoration si applicable)
+  const currentTotal = Math.round(baseDocTotal * nightMultiplier * 100) / 100;
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-800 font-sans pb-16">
@@ -619,7 +625,12 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                     {lines.map((line, idx) => (
                       <tr key={line.id || idx} className="hover:bg-slate-50/40 transition-colors">
                         <td className="py-3.5 pr-4 font-semibold text-slate-800 text-[11px] leading-relaxed">
-                          • {line.prestation_name}
+                          <span className="flex flex-col">
+                            <span>• {line.prestation_name.replace(/ \[MAJ\. NUIT.*?\]/g, '')}</span>
+                            {line.prestation_name.includes('[MAJ. NUIT') && (
+                              <span className="text-[9px] text-amber-600 font-bold mt-0.5">🌙 Tarif horaire de nuit appliqué</span>
+                            )}
+                          </span>
                         </td>
                         <td className="py-3.5 text-center font-bold text-[11px] text-slate-600">
                           {line.quantity}
@@ -643,9 +654,36 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                 <span>⚠️ Durée d'intervention calculée informatiquement : ~<strong>{Math.round(estimatedMinutes/60)} heures</strong> de travail requises pour le chantier.</span>
               </div>
               
-              <div className="bg-slate-50 border border-slate-100/80 p-4 rounded-2xl flex flex-col items-end shrink-0 min-w-[200px]">
+              <div className="bg-slate-50 border border-slate-100/80 p-4 rounded-2xl flex flex-col items-end shrink-0 min-w-[220px] space-y-1.5">
+                {/* ✅ Détail majoration de nuit si appliquée */}
+                {(() => {
+                  const hasNight = lines.some(l => l.prestation_name.includes('[MAJ. NUIT'));
+                  const nightPctMatch = lines.find(l => l.prestation_name.includes('[MAJ. NUIT'))?.prestation_name.match(/\[MAJ\. NUIT \+(\d+)%\]/);
+                  const nightPctVal = nightPctMatch ? Number(nightPctMatch[1]) : (corpConfig?.majorat_tarif_nuit_pct ?? 25);
+                  const baseSub = hasNight ? Math.round(baseDocTotal / (1 + nightPctVal / 100) * 100) / 100 : baseDocTotal;
+                  const surchAmt = hasNight ? Math.round((baseDocTotal - baseSub) * 100) / 100 : 0;
+
+                  return hasNight ? (
+                    <>
+                      <div className="flex justify-between w-full text-[10px] text-slate-500">
+                        <span>Sous-total prestations :</span>
+                        <span className="font-mono">{baseSub.toFixed(2)} €</span>
+                      </div>
+                      <div className="flex justify-between w-full text-[10px] text-amber-600 font-bold bg-amber-50 px-2 py-1 rounded-lg">
+                        <span>🌙 Majoration nuit (+{nightPctVal}%) :</span>
+                        <span className="font-mono">+{surchAmt.toFixed(2)} €</span>
+                      </div>
+                      <div className="w-full h-px bg-slate-200 my-0.5"></div>
+                    </>
+                  ) : null;
+                })()}
                 <span className="text-[9px] uppercase font-bold text-slate-400">Total Net à Payer (TTC)</span>
-                <span className="text-xl font-black text-sky-500 font-mono mt-1">{currentTotal.toFixed(2)} €</span>
+                <span className="text-xl font-black text-sky-500 font-mono mt-1">
+                  {currentTotal.toFixed(2)} €
+                </span>
+                {isCurrentSlotNight && (
+                  <span className="text-[9px] text-amber-500 font-bold mt-1 flex items-center gap-1">🌙 Maj. nuit +{nightPct}% incluse</span>
+                )}
                 <span className="text-[8px] text-slate-400 uppercase mt-1 font-bold">TVA non applicable (art. 293B du CGI)</span>
               </div>
             </div>
@@ -951,7 +989,8 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                       <div className="space-y-1.5 font-sans">
                         <div className="flex justify-between text-[10px] text-slate-400 font-medium">
                           <span>Prestation de base :</span>
-                          <span className="font-mono">{currentTotal.toFixed(2)} €</span>
+                          {/* ✅ Toujours afficher le prix BASE (sans majoration) */}
+                          <span className="font-mono">{baseDocTotal.toFixed(2)} €</span>
                         </div>
                         
                         <div className="flex justify-between text-[10px] text-slate-400 font-medium">
@@ -987,8 +1026,9 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
 
                         <div className="flex justify-between text-xs font-black text-white">
                           <span>Total révisé :</span>
+                          {/* ✅ Utilise currentTotal qui est déjà calculé avec la majoration */}
                           <span className="text-sky-400 font-mono text-sm">
-                            {(currentTotal * (isNightShiftCrossed(selectedSlot) ? (1 + (corpConfig?.majorat_tarif_nuit_pct !== undefined ? corpConfig.majorat_tarif_nuit_pct : 25) / 100) : 1)).toFixed(2)} €
+                            {currentTotal.toFixed(2)} €
                           </span>
                         </div>
                       </div>

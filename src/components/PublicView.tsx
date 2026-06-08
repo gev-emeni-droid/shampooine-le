@@ -82,6 +82,40 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
     loadCompany();
   }, []);
 
+  const [startTime, setStartTime] = useState('');
+
+  // Helper check to identify if a booked timeslot is a night hour (using dynamic settings set by artisan)
+  const isNightShiftCrossed = (startHm: string): boolean => {
+    if (!startHm) return false;
+    if (entrepriseConfig && entrepriseConfig.activer_majoration === false) return false;
+
+    const startLimit = entrepriseConfig?.plage_majoration_debut || '19:00';
+    const endLimit = entrepriseConfig?.plage_majoration_fin || '06:00';
+
+    const getMinutes = (hm: string): number => {
+      const [hours, minutes] = hm.split(':').map(Number);
+      return hours * 60 + (minutes || 0);
+    };
+
+    const currentMinutes = getMinutes(startHm);
+    const startLimitMinutes = getMinutes(startLimit);
+    const endLimitMinutes = getMinutes(endLimit);
+
+    if (startLimitMinutes > endLimitMinutes) {
+      // Overnight (e.g. 19:00 to 06:00)
+      return currentMinutes >= startLimitMinutes || currentMinutes < endLimitMinutes;
+    } else {
+      // Same day (e.g. 08:00 to 12:00)
+      return currentMinutes >= startLimitMinutes && currentMinutes < endLimitMinutes;
+    }
+  };
+
+  const getNightMultiplier = () => {
+    if (!startTime || !isNightShiftCrossed(startTime)) return 1.0;
+    const pct = entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25;
+    return 1 + pct / 100;
+  };
+
   const handleSliderMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
@@ -105,11 +139,12 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
   };
 
   const calculateTotal = () => {
-    return calcItems.reduce((total, item) => {
+    const baseTotal = calcItems.reduce((total, item) => {
       const p = prestations.find(prest => prest.id === item.id);
       const factor = clientType === 'professionnel' ? 1.25 : 1.0;
       return total + (p ? p.base_price * factor * item.qty : 0);
     }, 0);
+    return baseTotal * getNightMultiplier();
   };
 
   const handleRequestQuote = async (e: React.FormEvent) => {
@@ -144,13 +179,16 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
       // 2. Générer des lignes de devis
       const factor = clientType === 'professionnel' ? 1.25 : 1.0;
       const lines = [];
+      let baseSum = 0;
       const primaryPres = prestations.find(p => p.id === selectedPrestationId);
       if (primaryPres) {
+        const lineTotal = primaryPres.base_price * factor * areaQty;
+        baseSum += lineTotal;
         lines.push({
           prestation_name: `${primaryPres.name}${clientType === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
           quantity: areaQty,
           unit_price: primaryPres.base_price * factor,
-          total_price: primaryPres.base_price * factor * areaQty
+          total_price: lineTotal
         });
       }
 
@@ -158,14 +196,29 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
       calcItems.forEach(item => {
         const p = prestations.find(pres => pres.id === item.id);
         if (p && p.id !== selectedPrestationId) {
+          const lineTotal = p.base_price * factor * item.qty;
+          baseSum += lineTotal;
           lines.push({
             prestation_name: `${p.name}${clientType === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
             quantity: item.qty,
             unit_price: p.base_price * factor,
-            total_price: p.base_price * factor * item.qty
+            total_price: lineTotal
           });
         }
       });
+
+      // 2b. Add Night Surcharge Line if startTime falls under night shift rules
+      const isNight = isNightShiftCrossed(startTime);
+      const pct = entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25;
+      if (isNight && baseSum > 0) {
+        const surchargeVal = Math.round(baseSum * (pct / 100) * 100) / 100;
+        lines.push({
+          prestation_name: `Majoration Horaires de Nuit (${pct}%)`,
+          quantity: 1,
+          unit_price: surchargeVal,
+          total_price: surchargeVal
+        });
+      }
 
       // 3. Soumettre le devis comme un brouillon à l'artisan
       const todayString = new Date().toISOString().split('T')[0];
@@ -178,7 +231,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
           status: 'Brouillon' as DocumentStatus,
           date: todayString,
           due_date: expiryString,
-          notes: `Généré automatiquement suite au formulaire publique.\nMessage client: ${message}\nType: ${clientType === 'professionnel' ? `Pro (${companyName})` : 'Particulier'}`
+          notes: `Généré automatiquement suite au formulaire publique.\nMessage client: ${message}\nHeure de début souhaitée: ${startTime || 'Non spécifiée'}\nType: ${clientType === 'professionnel' ? `Pro (${companyName})` : 'Particulier'}`
         },
         lines
       );
@@ -436,82 +489,55 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
           </div>
 
           <div className="flex-1 w-full max-w-lg flex flex-col items-center">
-            {/* Real Interactive Before-After Slider using SVG representations representing a Sofa */}
+            {/* Real Interactive Before-After Slider using actual images */}
             <div 
-              className="relative w-full h-80 rounded-3xl overflow-hidden shadow-2xl border border-gray-200 select-none cursor-ew-resize"
+              className="relative w-full h-96 rounded-3xl overflow-hidden shadow-2xl border border-gray-200 select-none cursor-ew-resize"
               onMouseMove={handleSliderMove}
               onTouchMove={handleSliderMove}
             >
               
               {/* BACK - Clean State (After) */}
-              <div className="absolute inset-0 bg-[#e0f2fe] flex flex-col justify-between p-6">
-                <div className="flex justify-between items-center relative z-10">
-                  <span className="bg-sky-500/90 text-white text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm">APRÈS SHAMPOOINE</span>
-                  <div className="flex space-x-1">
-                    {[1, 2, 3, 4, 5].map(i => <Star key={i} className="w-3.5 h-3.5 text-amber-500 fill-current" />)}
+              <div className="absolute inset-0 w-full h-full">
+                <img 
+                  src="https://raw.githubusercontent.com/huss-dev/shampooine-assets/main/media__1780928603266.png" 
+                  alt="Après nettoyage" 
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                />
+                <div className="absolute top-4 left-4 z-10 flex justify-between items-center w-[calc(100%-2rem)]">
+                  <span className="bg-sky-500/90 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm">APRÈS SHAMPOOINE</span>
+                  <div className="flex space-x-0.5 bg-black/35 p-1 rounded-lg backdrop-blur-sm">
+                    {[1, 2, 3, 4, 5].map(i => <Star key={i} className="w-3 h-3 text-amber-400 fill-current" />)}
                   </div>
                 </div>
-
-                {/* SVG Sofa representation in spotless turquoise clean state */}
-                <div className="flex flex-col items-center justify-center h-44">
-                  <Sparkles className="w-12 h-12 text-sky-400 animate-bounce absolute top-12" />
-                  <svg className="w-64 h-32 text-sky-500" viewBox="0 0 200 100" fill="currentColor">
-                    {/* Sofa back cushion */}
-                    <path d="M 30 30 Q 35 15, 100 15 Q 165 15, 170 30 C 175 40, 175 60, 160 65 L 40 65 C 25 60, 25 40, 30 30 Z" />
-                    {/* Left armrest */}
-                    <rect x="15" y="40" width="20" height="30" rx="8" />
-                    {/* Right armrest */}
-                    <rect x="165" y="40" width="20" height="30" rx="8" />
-                    {/* Capital bottom cushion */}
-                    <rect x="30" y="55" width="140" height="15" rx="5" />
-                    {/* Sofa legs */}
-                    <rect x="40" y="70" width="10" height="12" rx="2" fill="#0c4a6e" />
-                    <rect x="150" y="70" width="10" height="12" rx="2" fill="#0c4a6e" />
-                  </svg>
-                  <p className="text-[10px] uppercase tracking-widest text-sky-600 font-extrabold mt-2">DÉSINFICTÉ &amp; RAVIVÉ 100%</p>
+                <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
+                  <span className="text-[10px] text-white font-extrabold bg-sky-500/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">DÉSINFICTÉ &amp; RAVIVÉ 100% — Velours préservé</span>
                 </div>
-                
-                <span className="text-[10px] text-sky-700/80 font-medium text-center relative z-10 bg-white/50 py-1 rounded-full">Velours préservé et fibres aérées</span>
               </div>
 
               {/* OVERLAY FRONT - Dirty State (Before) */}
               <div 
-                className="absolute inset-0 bg-amber-50 flex flex-col justify-between p-6 overflow-hidden transition-all duration-75"
+                className="absolute inset-0 w-full h-full overflow-hidden transition-all duration-75"
                 style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
               >
-                <div className="flex justify-between items-center relative z-10 w-[500px]">
-                  <span className="bg-amber-800/95 text-white text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">AVANT NETTOYAGE</span>
+                <div className="absolute inset-0 w-full h-full min-w-[32rem]">
+                  <img 
+                    src="https://raw.githubusercontent.com/huss-dev/shampooine-assets/main/media__1780928603260.png" 
+                    alt="Avant nettoyage" 
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    style={{ width: '100%', height: '100%' }}
+                  />
+                  <div className="absolute top-4 left-4 z-10">
+                    <span className="bg-amber-800/95 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">AVANT NETTOYAGE</span>
+                  </div>
+                  <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
+                    <span className="text-[10px] text-white font-extrabold bg-amber-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">TACHES INCUSTÉES, AURÉOLES &amp; SÉBUM</span>
+                  </div>
                 </div>
-
-                {/* SVG Sofa in dirty brown state with stains */}
-                <div className="flex flex-col items-center justify-center h-44 w-[430px]">
-                  <svg className="w-64 h-32 text-amber-800" viewBox="0 0 200 100" fill="currentColor">
-                    {/* Sofa back cushion */}
-                    <path d="M 30 30 Q 35 15, 100 15 Q 165 15, 170 30 C 175 40, 175 60, 160 65 L 40 65 C 25 60, 25 40, 30 30 Z" />
-                    {/* Left armrest */}
-                    <rect x="15" y="40" width="20" height="30" rx="8" />
-                    {/* Right armrest */}
-                    <rect x="165" y="40" width="20" height="30" rx="8" />
-                    {/* Bottom cushion */}
-                    <rect x="30" y="55" width="140" height="15" rx="5" />
-                    {/* Dark coffee spots and halo representing dirty spots */}
-                    <circle cx="60" cy="40" r="10" fill="#78350f" opacity="0.6" />
-                    <circle cx="110" cy="50" r="14" fill="#78350f" opacity="0.5" />
-                    <circle cx="130" cy="42" r="8" fill="#78350f" opacity="0.7" />
-                    <circle cx="45" cy="60" r="12" fill="#78350f" opacity="0.4" />
-                    {/* Sofa legs */}
-                    <rect x="40" y="70" width="10" height="12" rx="2" fill="#451a03" />
-                    <rect x="150" y="70" width="10" height="12" rx="2" fill="#451a03" />
-                  </svg>
-                  <p className="text-[10px] uppercase tracking-widest text-amber-700 font-extrabold mt-2">ALCOOLS, TACHES DE GRAISSE, CRASSES</p>
-                </div>
-
-                <span className="text-[10px] text-amber-800 bg-amber-100/50 py-1 rounded-full text-center relative z-10 w-[300px]">Terre, auréoles de café et usines</span>
               </div>
 
               {/* SLIDER BAR HANDLE */}
               <div 
-                className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize flex items-center justify-center"
+                className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize flex items-center justify-center z-20"
                 style={{ left: `${sliderPosition}%` }}
               >
                 <div className="w-8 h-8 bg-sky-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg -ml-3.5 select-none">
@@ -844,6 +870,24 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                     className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none transition-all"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-sky-500" />
+                  <span>Heure de début souhaitée (Transparence majoration)</span>
+                </label>
+                <input 
+                  type="time"
+                  value={startTime}
+                  onChange={e => setStartTime(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none transition-all"
+                />
+                {startTime && isNightShiftCrossed(startTime) && (
+                  <p className="text-[10px] text-amber-600 font-semibold bg-amber-50 p-2 rounded-lg border border-amber-100">
+                    ⚠️ L'heure choisie ({startTime}) est soumise à la majoration de nuit ({entrepriseConfig?.plage_majoration_debut || '19:00'} - {entrepriseConfig?.plage_majoration_fin || '06:00'}). Une majoration de {entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25}% sera automatiquement appliquée.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
