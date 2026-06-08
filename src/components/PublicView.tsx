@@ -758,7 +758,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                     type="button"
                     onClick={() => setStartTime('09:00')}
                     className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      !isNightShiftCrossed(startTime)
+                      startTime !== '23:00'
                         ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
@@ -769,7 +769,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                     type="button"
                     onClick={() => setStartTime('23:00')}
                     className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                      isNightShiftCrossed(startTime)
+                      startTime === '23:00'
                         ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
@@ -778,7 +778,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                   </button>
                 </div>
                 <p className="text-[10px] text-gray-400 italic mt-1.5 leading-normal">
-                  {!isNightShiftCrossed(startTime)
+                  {startTime !== '23:00'
                     ? "(Horaires applicables : 06:00 - 22:00)"
                     : `(⚠️ Soumis à majoration de nuit de ${entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25}% : 22:00 - 06:00)`}
                 </p>
