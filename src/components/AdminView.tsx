@@ -1101,33 +1101,6 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   // Re-adjust edit lines based on whether current start time is night time or not
   const [previousStartWasNight, setPreviousStartWasNight] = useState<boolean>(false);
 
-  const applyNightSurchargeToLines = (startTime: string, linesList: typeof editApptLines) => {
-    const isNight = isNightShiftCrossed(startTime);
-    const multiplier = isNight ? (1 + surchargePct / 100) : 1.0;
-    
-    // We update unit_price of lines by applying or removing surcharge
-    return linesList.map(line => {
-      // Clean name from previous night surcharge notes
-      const cleanName = line.prestation_name.replace(/ \[MAJORATION DE NIGHT.*?\]/g, "").replace(/ \[MAJ\. NUIT.*?\]/g, "");
-      
-      // Let's deduce base unit price: if previous was night, we divide by (1 + surchargePct/100)
-      let basePrice = line.unit_price;
-      if (previousStartWasNight) {
-        basePrice = Number((line.unit_price / (1 + surchargePct / 100)).toFixed(2));
-      }
-
-      const finalUnitPrice = Number((basePrice * multiplier).toFixed(2));
-      const nameWithNote = isNight ? `${cleanName} [MAJ. NUIT +${surchargePct}%]` : cleanName;
-
-      return {
-        ...line,
-        prestation_name: nameWithNote,
-        unit_price: finalUnitPrice,
-        total_price: Number((finalUnitPrice * line.quantity).toFixed(2))
-      };
-    });
-  };
-
   // Open Edit Appointment Modal and pre-fetch lines
   const handleOpenEditAppointment = async (appt: RendezVousPlanning) => {
     setEditingAppt(appt);
@@ -1160,12 +1133,38 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     setEditApptModal(true);
   };
 
-  // Trigger recalculation when form fields change (heure de debut)
-  const handleEditStartTimeChange = (newTime: string) => {
-    const nextLines = applyNightSurchargeToLines(newTime, editApptLines);
-    setEditApptLines(nextLines);
-    setPreviousStartWasNight(isNightShiftCrossed(newTime));
-    setEditApptForm({ ...editApptForm, start_time: newTime });
+  // Toggle Day/Night shift in appointment edit form
+  const handleEditShiftToggle = (isNight: boolean) => {
+    // Determine new start time string representation
+    const newTime = isNight ? '23:00' : '09:00';
+    setEditApptForm(prev => ({ ...prev, start_time: newTime }));
+    setPreviousStartWasNight(isNight);
+
+    const surchargeName = `Majoration Horaires de Nuit (${surchargePct}%)`;
+    
+    if (isNight) {
+      // Check if surcharge line already exists
+      const exists = editApptLines.some(l => l.prestation_name.includes("Majoration Horaires de Nuit"));
+      if (!exists) {
+        // Calculate 25% of current base lines
+        const baseSum = editApptLines.reduce((acc, curr) => acc + curr.total_price, 0);
+        const surchargeVal = Number((baseSum * (surchargePct / 100)).toFixed(2));
+        
+        setEditApptLines([
+          ...editApptLines,
+          {
+            prestation_name: surchargeName,
+            quantity: 1,
+            unit_price: surchargeVal,
+            total_price: surchargeVal
+          }
+        ]);
+      }
+    } else {
+      // Remove any surcharge lines
+      const filtered = editApptLines.filter(l => !l.prestation_name.includes("Majoration Horaires de Nuit"));
+      setEditApptLines(filtered);
+    }
   };
 
   // Dynamic lines updates inside appointment editing modal
@@ -1173,6 +1172,18 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     const updated = [...editApptLines];
     updated[index].quantity = newQty;
     updated[index].total_price = Number((newQty * updated[index].unit_price).toFixed(2));
+
+    // If night is active, update the night surcharge amount dynamically
+    const surchargeIndex = updated.findIndex(l => l.prestation_name.includes("Majoration Horaires de Nuit"));
+    if (surchargeIndex !== -1 && surchargeIndex !== index) {
+      const baseSum = updated
+        .filter((_, idx) => idx !== surchargeIndex)
+        .reduce((acc, curr) => acc + curr.total_price, 0);
+      const surchargeVal = Number((baseSum * (surchargePct / 100)).toFixed(2));
+      updated[surchargeIndex].unit_price = surchargeVal;
+      updated[surchargeIndex].total_price = surchargeVal;
+    }
+
     setEditApptLines(updated);
   };
 
@@ -5323,16 +5334,40 @@ export default {
                     className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
                   />
                 </div>
+                
                 <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Heure de début *</span>
-                  <input 
-                    type="time"
-                    required
-                    value={editApptForm.start_time}
-                    onChange={e => handleEditStartTimeChange(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
-                  />
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Plage horaire *</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEditShiftToggle(false)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                        !isNightShiftCrossed(editApptForm.start_time)
+                          ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      ☀️ Journée
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditShiftToggle(true)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                        isNightShiftCrossed(editApptForm.start_time)
+                          ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      🌙 Nuit
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-gray-400 italic mt-1 leading-tight">
+                    {!isNightShiftCrossed(editApptForm.start_time)
+                      ? "(Horaires applicables : 06:00 - 22:00)"
+                      : `(⚠️ Soumis à majoration de nuit : 22:00 - 06:00)`}
+                  </p>
                 </div>
+
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Durée estimée (min) *</span>
                   <input 
