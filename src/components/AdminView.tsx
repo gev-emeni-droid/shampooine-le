@@ -132,6 +132,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   // Search & Filter globals
   const [searchTerm, setSearchTerm] = useState('');
+  const [documentSearchTerm, setDocumentSearchTerm] = useState('');
   
   // Modal / Detail drawer states
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
