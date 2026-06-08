@@ -499,7 +499,19 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
               onMouseMove={handleSliderMove}
               onTouchMove={handleSliderMove}
             >
-              
+              {/* TOP DYNAMIC TEXT BADGE */}
+              <div className="absolute top-4 left-4 z-30 pointer-events-none">
+                <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm shadow-sm ${
+                  sliderPosition < 50 
+                    ? 'bg-amber-800/95 text-white'
+                    : 'bg-sky-500/90 text-white'
+                }`}>
+                  {sliderPosition < 55 
+                    ? `AVANT ${entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}` 
+                    : `APRÈS ${entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}`}
+                </span>
+              </div>
+
               {/* BACK - Clean State (After) */}
               <div className="absolute inset-0 w-full h-full">
                 <img 
@@ -507,10 +519,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                   alt="Après nettoyage" 
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
-                <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center">
-                  <span className="bg-sky-500/90 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm">
-                    APRÈS {entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE'}
-                  </span>
+                <div className="absolute top-4 right-4 z-10 flex items-center pointer-events-none">
                   <div className="flex space-x-0.5 bg-black/35 p-1 rounded-lg backdrop-blur-sm">
                     {[1, 2, 3, 4, 5].map(i => <Star key={i} className="w-3 h-3 text-amber-400 fill-current" />)}
                   </div>
@@ -525,20 +534,14 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
               {/* OVERLAY FRONT - Dirty State (Before) */}
               <div 
                 className="absolute inset-0 w-full h-full overflow-hidden transition-all duration-75"
-                style={{ clipPath: `polygon(0 0, ${sliderPosition}% 0, ${sliderPosition}% 100%, 0 100%)` }}
+                style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
               >
-                {/* We use exactly the parent dimensions to align images perfectly */}
                 <div className="absolute inset-0 w-full h-full">
                   <img 
                     src="/media__1780928603260.png" 
                     alt="Avant nettoyage" 
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                   />
-                  <div className="absolute top-4 left-4 z-10">
-                    <span className="bg-amber-800/95 text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">
-                      AVANT {entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE'}
-                    </span>
-                  </div>
                   <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
                     <span className="text-[10px] text-white font-extrabold bg-amber-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
                       TACHES INCRUSTÉES, AURÉOLES &amp; SÉBUM

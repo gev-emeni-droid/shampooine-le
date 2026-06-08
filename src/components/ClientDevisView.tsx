@@ -73,6 +73,8 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
   const [isBooking, setIsBooking] = useState(false);
   const [bookingNotes, setBookingNotes] = useState('');
   const [createdAppointment, setCreatedAppointment] = useState<RendezVousPlanning | null>(null);
+  const [docPhotos, setDocPhotos] = useState<DocumentPhoto[]>([]);
+  const [clientSliderPos, setClientSliderPos] = useState(50);
 
   // List of upcoming 14 days to pick from
   const [upcomingDays, setUpcomingDays] = useState<{ dateStr: string; label: string; isClosed: boolean }[]>([]);
@@ -114,6 +116,9 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
 
         const docLines = await apiService.getLignesDocument(docId);
         setLines(docLines);
+
+        const photos = await apiService.getDocumentPhotos(docId);
+        setDocPhotos(photos || []);
 
         // Fetch Client details
         const clientsList = await apiService.getClients();
@@ -439,6 +444,14 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
     }
   };
 
+  const handleClientSliderMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const offset = clientX - rect.left;
+    const percentage = Math.max(0, Math.min(100, (offset / rect.width) * 100));
+    setClientSliderPos(percentage);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-4">
@@ -530,6 +543,79 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
         
         {/* LEFT COLUMN: The high-fidelity Document preview replica */}
         <div className="lg:col-span-7 space-y-6">
+
+          {/* Real Interactive Before-After Slider if photos exist */}
+          {(() => {
+            const beforeP = docPhotos.find(p => p.before_after === 'before');
+            const afterP = docPhotos.find(p => p.before_after === 'after');
+            if (beforeP && afterP) {
+              return (
+                <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl p-6 flex flex-col items-center space-y-4 animate-in fade-in duration-300">
+                  <div className="flex justify-between items-center w-full">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                       <span>✨</span>
+                       <span>Photos de votre prestation en direct</span>
+                    </h3>
+                    <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full uppercase">Terminé</span>
+                  </div>
+
+                  <div 
+                    className="relative w-full h-80 rounded-2xl overflow-hidden shadow-md border border-gray-100 select-none cursor-ew-resize"
+                    onMouseMove={handleClientSliderMove}
+                    onTouchMove={handleClientSliderMove}
+                  >
+                    {/* TOP DYNAMIC TEXT BADGE */}
+                    <div className="absolute top-4 left-4 z-30 pointer-events-none">
+                      <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm shadow-sm ${
+                        clientSliderPos < 50 
+                          ? 'bg-amber-800/95 text-white'
+                          : 'bg-sky-500/90 text-white'
+                      }`}>
+                        {clientSliderPos < 55 
+                          ? `AVANT ${corpConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}` 
+                          : `APRÈS ${corpConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}`}
+                      </span>
+                    </div>
+
+                    {/* BACK - Clean State (After) */}
+                    <div className="absolute inset-0 w-full h-full">
+                      <img 
+                        src={afterP.photo_url} 
+                        alt="Après nettoyage" 
+                        className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                      />
+                    </div>
+
+                    {/* OVERLAY FRONT - Dirty State (Before) */}
+                    <div 
+                      className="absolute inset-0 w-full h-full overflow-hidden transition-all duration-75"
+                      style={{ clipPath: `inset(0 ${100 - clientSliderPos}% 0 0)` }}
+                    >
+                      <div className="absolute inset-0 w-full h-full">
+                        <img 
+                          src={beforeP.photo_url} 
+                          alt="Avant nettoyage" 
+                          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* SLIDER BAR HANDLE */}
+                    <div 
+                      className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize flex items-center justify-center z-20"
+                      style={{ left: `${clientSliderPos}%` }}
+                    >
+                      <div className="w-6 h-6 bg-sky-500 rounded-full border border-white flex items-center justify-center shadow-lg -ml-2.5 select-none">
+                        <span className="text-white text-[9px] font-bold">⇌</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-gray-400 font-medium">Glissez votre doigt ou curseur sur l'image pour comparer avant/après</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
           
           {/* Document container */}
           <div className="bg-white rounded-3xl border border-gray-100 shadow-2xl p-6 md:p-8 space-y-8 animate-in fade-in duration-300">

@@ -147,9 +147,16 @@ app.get('/clients', async (c) => {
 app.get('/clients/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(id).first();
+    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(id).first<any>();
     if (!client) return c.json({ error: 'Client non trouvé' }, 404);
-    return c.json(client);
+    
+    // Fetch documents
+    const { results: documents } = await c.env.DB.prepare('SELECT * FROM documents WHERE client_id = ? ORDER BY created_at DESC').bind(id).all();
+    
+    return c.json({
+      ...client,
+      documents: documents || []
+    });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }

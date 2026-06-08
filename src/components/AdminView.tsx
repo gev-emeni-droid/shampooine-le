@@ -154,6 +154,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   
   // Quote Builder States
   const [viewingDoc, setViewingDoc] = useState<DevisFacture | null>(null);
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [sendingDocId, setSendingDocId] = useState<string | null>(null);
   const [viewingLines, setViewingLines] = useState<LigneDocument[]>([]);
   const [viewingPhotos, setViewingPhotos] = useState<DocumentPhoto[]>([]);
@@ -697,6 +698,24 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     } catch (err) {
       console.error(err);
       onToast("Échec d'enregistrement du client.", "info");
+    }
+  };
+
+  const handleSelectClient = async (client: Client) => {
+    setSelectedClient(client);
+    try {
+      const fullClient = await apiService.getClientById(client.id);
+      if (fullClient) {
+        setSelectedClient(fullClient);
+        if (fullClient.documents) {
+          setDocuments(prev => {
+            const filtered = prev.filter(d => d.client_id !== client.id);
+            return [...filtered, ...fullClient.documents!];
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load client details with documents", err);
     }
   };
 
@@ -1754,6 +1773,516 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   const activeQuotesCount = documents.filter(d => d.type === 'devis').length;
   const acceptedQuotesCount = documents.filter(d => d.type === 'devis' && d.status === 'Signé/Accepté').length;
 
+  const renderSingleDocumentPreview = (doc: DevisFacture, onClosePreview: () => void) => {
+    return (
+      <div className="space-y-6">
+        <button 
+          onClick={onClosePreview}
+          className="flex items-center space-x-2 text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer animate-in fade-in duration-200"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Retour</span>
+        </button>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Invoice sheet style */}
+          <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 p-8 shadow-md space-y-8">
+            <div className="flex justify-between items-start">
+              <div className="flex items-start space-x-3.5">
+                {entrepriseConfig?.logo_url ? (
+                  <img 
+                    src={entrepriseConfig.logo_url} 
+                    alt="Logo" 
+                    className="w-auto h-12 md:h-20 object-contain rounded-2xl border border-slate-100 shadow-sm logo-dynamique-net"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="bg-gradient-to-tr from-sky-400 to-blue-600 p-3.5 rounded-2xl text-white shadow-md">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                )}
+                <div className="space-y-0.5">
+                  <span className="text-xl font-bold tracking-tight text-slate-900">
+                    {entrepriseConfig?.nom_entreprise || 'Shampooine Le'}
+                  </span>
+                  <p className="text-[10px] text-slate-400 font-medium">Nettoyage haut de gamme de textiles d'ameublement</p>
+                  {entrepriseConfig?.telephone && (
+                    <p className="text-[10px] text-slate-500 font-mono">Tél : {entrepriseConfig.telephone}</p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="text-right">
+                <span className={`text-[10px] font-extrabold uppercase px-3 py-1 rounded-full ${
+                  doc.type === 'devis' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {doc.type} #{doc.number}
+                </span>
+                <h3 className="text-lg font-black text-slate-900 mt-2">{doc.total_amount.toFixed(2)} €</h3>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Émetteur / Prestataire</p>
+                <p className="font-bold text-slate-900 mt-1">{entrepriseConfig?.nom_entreprise || 'Shampooine Le S.A.S'}</p>
+                <p className="text-slate-500 mt-0.5 whitespace-pre-line">{entrepriseConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</p>
+                <p className="text-slate-500">{entrepriseConfig?.telephone || '06 12 34 56 78'}</p>
+              </div>
+
+              <div>
+                <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Destinataire (Client)</p>
+                {(() => {
+                  const cl = clients.find(c => c.id === doc.client_id);
+                  return cl ? (
+                    <div className="mt-1">
+                      <p className="font-bold text-slate-900">{cl.last_name.toUpperCase()} {cl.first_name}</p>
+                      <p className="text-slate-500">{cl.email}</p>
+                      <p className="text-slate-500">{cl.phone}</p>
+                      <button 
+                        onClick={() => {
+                          setSelectedClient(cl);
+                          setActiveTab('clients');
+                          setEditClientForm(cl);
+                          setEditClientModal(true);
+                          setIsDocModalOpen(false);
+                        }}
+                        className="mt-2 text-[10px] font-bold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded-lg border border-sky-100 flex items-center gap-1 cursor-pointer transition-all"
+                      >
+                        <span>👤 Consulter / Modifier la Fiche Client</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-slate-500 mt-1">Inconnu</p>
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div className="border-t border-b border-gray-100 py-4 text-xs grid grid-cols-3">
+              <div>
+                <span className="text-slate-400 block text-[9px]">DATE D'ÉMISSION</span>
+                <span className="font-bold text-slate-800">{doc.date}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[9px]">DATE D'ÉCHÉANCE</span>
+                <span className="font-bold text-slate-800">{doc.due_date}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[9px]">STATUT ACTUEL</span>
+                <span className="font-extrabold text-sky-600">{doc.status}</span>
+              </div>
+            </div>
+
+            {/* Line items table — adapté B2B/B2C */}
+            {(() => {
+              const cl = clients.find(c => c.id === doc.client_id);
+              const isB2BDoc = cl?.type_client === 'professionnel';
+              
+              const localTTC = viewingLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+              const localHT = isB2BDoc ? localTTC / 1.20 : localTTC;
+              const localTVA = isB2BDoc ? localTTC - localHT : 0;
+              const isBrouillon = doc.status === 'Brouillon';
+
+              const updateLocalLineQty = async (index: number, newQty: number) => {
+                const updatedLines = [...viewingLines];
+                const line = updatedLines[index];
+                line.quantity = Math.max(1, newQty);
+                line.total_price = line.quantity * line.unit_price;
+                setViewingLines(updatedLines);
+
+                const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                const updatedDoc = {
+                  ...doc,
+                  total_amount: calculatedTTC,
+                  total_ht: calculatedHT,
+                  total_ttc: calculatedTTC
+                };
+                setViewingDoc(updatedDoc);
+                try {
+                  await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                  const freshDocs = await apiService.getDevisFactures();
+                  setDocuments(freshDocs);
+                } catch(err) {
+                  console.error(err);
+                }
+              };
+
+              const deleteLocalLine = async (index: number) => {
+                if (viewingLines.length <= 1) {
+                  onToast("Un document doit posséder au moins une ligne de prestation.", "info");
+                  return;
+                }
+                const updatedLines = viewingLines.filter((_, idx) => idx !== index);
+                setViewingLines(updatedLines);
+
+                const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                const updatedDoc = {
+                  ...doc,
+                  total_amount: calculatedTTC,
+                  total_ht: calculatedHT,
+                  total_ttc: calculatedTTC
+                };
+                setViewingDoc(updatedDoc);
+                try {
+                  await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                  const freshDocs = await apiService.getDevisFactures();
+                  setDocuments(freshDocs);
+                  onToast("Ligne supprimée !", "success");
+                } catch(err) {
+                  console.error(err);
+                }
+              };
+
+              const addPrestationToBrouillon = async (prestationId: string) => {
+                const p = prestations.find(x => x.id === prestationId);
+                if (!p) return;
+                
+                const factor = isB2BDoc ? 1.25 : 1.0;
+                const unitVal = p.base_price * factor;
+                const priceVal = isB2BDoc ? unitVal / 1.20 : unitVal;
+
+                const newLine = {
+                  devis_facture_id: doc.id,
+                  prestation_name: p.name,
+                  quantity: 1,
+                  unit_price: priceVal,
+                  total_price: priceVal
+                } as any;
+
+                const updatedLines = [...viewingLines, newLine];
+                setViewingLines(updatedLines);
+
+                const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                const updatedDoc = {
+                  ...doc,
+                  total_amount: calculatedTTC,
+                  total_ht: calculatedHT,
+                  total_ttc: calculatedTTC
+                };
+                setViewingDoc(updatedDoc);
+                try {
+                  await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                  const freshDocs = await apiService.getDevisFactures();
+                  setDocuments(freshDocs);
+                  onToast("Prestation ajoutée au brouillon !", "success");
+                } catch(err) {
+                  console.error(err);
+                }
+              };
+
+              return (
+                <>
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-gray-100 text-slate-400 font-bold uppercase text-[9px]">
+                        <th className="py-2">Désignation de la prestation</th>
+                        <th className="py-2 text-center w-24">Qté</th>
+                        <th className="py-2 text-right">{isB2BDoc ? 'Prix Unit. HT' : 'Prix Unit. TTC'}</th>
+                        <th className="py-2 text-right">{isB2BDoc ? 'Total Ligne HT' : 'Total Ligne TTC'}</th>
+                        {isBrouillon && <th className="py-2 text-center w-12">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewingLines.map((line, idx) => (
+                        <tr key={idx} className="border-b border-slate-50 text-slate-800">
+                          <td className="py-2.5 font-semibold text-slate-900">{line.prestation_name}</td>
+                          <td className="py-2.5 text-center">
+                            {isBrouillon ? (
+                              <input 
+                                type="number" 
+                                min="1" 
+                                value={line.quantity} 
+                                onChange={(e) => updateLocalLineQty(idx, parseInt(e.target.value) || 1)}
+                                className="w-14 text-center px-1 py-0.5 rounded border border-gray-200 outline-none focus:ring-1 focus:ring-sky-500"
+                              />
+                            ) : (
+                              line.quantity
+                            )}
+                          </td>
+                          <td className="py-2.5 text-right">{line.unit_price.toFixed(2)} €</td>
+                          <td className="py-2.5 text-right font-bold text-slate-900">{line.total_price.toFixed(2)} €</td>
+                          {isBrouillon && (
+                            <td className="py-2.5 text-center">
+                              <button 
+                                onClick={() => deleteLocalLine(idx)}
+                                className="text-red-500 hover:text-red-700 p-1 cursor-pointer transition-colors"
+                                title="Supprimer la ligne"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {isBrouillon && (
+                    <div className="bg-sky-50/50 p-4 rounded-2xl border border-sky-100/60 mt-4 flex flex-col sm:flex-row items-center gap-3">
+                      <span className="text-[10px] font-extrabold text-sky-700 uppercase shrink-0">Ajouter au brouillon :</span>
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            addPrestationToBrouillon(e.target.value);
+                            e.target.value = '';
+                          }
+                        }}
+                        className="flex-1 bg-white border border-sky-100 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-sky-500"
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Sélectionner une prestation du catalogue...</option>
+                        {prestations.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} ({p.base_price.toFixed(2)} €)</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col items-end space-y-1 pt-4 border-t border-gray-100">
+                    {isB2BDoc ? (
+                      <>
+                        <div className="text-xs text-slate-400 flex justify-between w-72">
+                          <span>Total Global HT :</span>
+                          <span className="text-slate-900 font-semibold">{localHT.toFixed(2)} €</span>
+                        </div>
+                        <div className="text-xs text-slate-400 flex justify-between w-72">
+                          <span>TVA (20%) :</span>
+                          <span className="text-slate-900 font-semibold">{localTVA.toFixed(2)} €</span>
+                        </div>
+                        <div className="text-sm font-bold text-indigo-700 flex justify-between w-72 pt-2 border-t border-slate-100">
+                          <span>Total Global TTC (Net à payer) :</span>
+                          <span className="text-indigo-600 text-base font-black">{localTTC.toFixed(2)} €</span>
+                        </div>
+                        <div className="mt-1">
+                          <span className="text-[8px] text-indigo-400 font-medium italic">🏢 Document B2B — TVA 20% détaillée</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-xs text-slate-400 flex justify-between w-64">
+                          <span>Total global TTC :</span>
+                          <span className="text-slate-900 font-semibold">{localTTC.toFixed(2)} €</span>
+                        </div>
+                        <div className="text-xs text-slate-400 flex justify-between w-64">
+                          <span>TVA non applicable (art. 293B du CGI) :</span>
+                          <span className="text-slate-900 font-semibold">0.00 €</span>
+                        </div>
+                        <div className="text-sm font-bold text-slate-900 flex justify-between w-64 pt-2 border-t border-slate-100">
+                          <span>Total Net à payer (TTC) :</span>
+                          <span className="text-sky-600 text-base font-black">{localTTC.toFixed(2)} €</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+
+            {doc.notes && (
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-500">
+                <p className="font-bold uppercase text-[9px] text-slate-400">Notes &amp; conditions de règlement</p>
+                <p className="mt-1 italic">{doc.notes}</p>
+              </div>
+            )}
+
+            <div className="pt-6 border-t border-slate-100 flex flex-col items-center justify-center text-center space-y-1.5 mt-8 text-[9px] text-slate-400 font-medium">
+              <p className="font-bold text-slate-700">
+                {entrepriseConfig?.nom_entreprise || 'Shampooine Le'} — {entrepriseConfig?.forme_juridique || 'SARL'} au Capital de {entrepriseConfig?.capital_social || '10 000 €'}
+              </p>
+              <p>
+                Siège Social : {entrepriseConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}
+              </p>
+              <p className="font-mono text-[8px] text-slate-400/80">
+                SIRET : {entrepriseConfig?.siret || '123 456 789 00021'} | Code APE : {entrepriseConfig?.code_ape || '8121Z'} | TVA Intracommunautaire : {entrepriseConfig?.tva_intracommunautaire || 'FR 12 123456789'}
+              </p>
+              <div className="h-1 w-12 bg-sky-200 rounded-full my-1"></div>
+              <p className="text-[7.5px] text-slate-400/60 leading-normal">
+                Dispositions applicables : Prestations d'injection-extraction et de détachage thermique de canapés, tapis et fauteuils. Tous nos tarifs s'entendent nets de taxes, TVA non applicable en vertu de l'article 293B du CGI.
+              </p>
+            </div>
+          </div>
+
+          {/* Left: action sidebar */}
+          <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-6 shrink-0 self-start">
+            <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Actions Administrateur</h4>
+            
+            <div className="space-y-3.5">
+              {doc.type === 'facture' && doc.status === 'Facturé' && doc.moyen_paiement === 'VIREMENT' && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const updated = await apiService.updateDocumentStatus(doc.id, 'Payé');
+                      const updatedFull = {
+                        ...doc,
+                        status: 'Payé' as DocumentStatus,
+                        paiement_valide: true,
+                        date_paiement: new Date().toISOString()
+                      };
+                      await apiService.saveDevisFacture(updatedFull, viewingLines);
+                      setViewingDoc(updatedFull);
+                      onToast("Paiement validé et facture clôturée avec succès !", "success");
+                      const freshDocs = await apiService.getDevisFactures();
+                      setDocuments(freshDocs);
+                    } catch (err) {
+                      onToast("Erreur lors de la validation du paiement.", "info");
+                    }
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-md shadow-emerald-600/10 cursor-pointer transition-all"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Clôturer et valider le paiement</span>
+                </button>
+              )}
+
+              <div>
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">METTRE À JOUR LE STATUT</label>
+                <select 
+                  value={doc.status}
+                  onChange={(e) => handleStatusChange(doc.id, e.target.value as DocumentStatus)}
+                  className="bg-slate-50 border border-slate-100 text-xs px-3 py-2 rounded-xl w-full focus:ring-1 focus:ring-sky-500 focus:bg-white outline-none"
+                >
+                  <option value="Brouillon">Brouillon</option>
+                  <option value="Envoyé au client">Envoyé au client</option>
+                  <option value="Signé/Accepté">Signé/Accepté</option>
+                  <option value="Facturé">Facturé</option>
+                  <option value="Payé">Payé</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => handleSendOrResendDoc(doc)}
+                disabled={sendingDocId === doc.id}
+                className={`w-full font-bold py-3.5 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all ${
+                  sendingDocId === doc.id 
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white shadow-lg shadow-sky-500/20'
+                }`}
+              >
+                <Mail className="w-4 h-4" />
+                <span>
+                  {sendingDocId === doc.id 
+                    ? "Envoi en cours..."
+                    : doc.type === 'devis'
+                      ? doc.status === 'Brouillon'
+                        ? "Envoyer le devis"
+                        : "Renvoyer le devis"
+                      : doc.status === 'Brouillon'
+                        ? "Envoyer la facture"
+                        : "Renvoyer la facture"
+                  }
+                </span>
+              </button>
+
+              {doc.type === 'devis' && (
+                <button 
+                  onClick={() => handleConvertToInvoice(doc.id, doc.number)}
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-md shadow-emerald-500/10 cursor-pointer transition-colors"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  <span>Convertir en Facture</span>
+                </button>
+              )}
+
+              <button 
+                onClick={() => { window.print(); }}
+                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimer / Format PDF</span>
+              </button>
+
+              <button 
+                onClick={() => handleDeleteDocument(doc.id, doc.number)}
+                className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Supprimer le document</span>
+              </button>
+
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">PHOTOS &amp; FICHIERS JOINTS ({viewingPhotos.length})</span>
+                
+                {viewingPhotos.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic">Aucune photo ni fichier joint lié.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {viewingPhotos.map(p => (
+                      <div key={p.id} className="relative group rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
+                        <img 
+                          src={p.photo_url} 
+                          alt={p.caption} 
+                          referrerPolicy="no-referrer"
+                          className="w-full h-16 object-cover" 
+                        />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-1">
+                          <button 
+                            type="button"
+                            onClick={() => handleDeleteDocumentPhoto(p.id)}
+                            className="text-white hover:text-red-400 p-1 cursor-pointer"
+                            title="Supprimer la photo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <span className={`absolute bottom-0 left-0 right-0 text-[8px] truncate bg-black/50 text-white px-1 text-center uppercase font-bold`}>
+                          {p.before_after === 'before' ? 'Avant' : p.before_after === 'after' ? 'Après' : 'Tissu'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 mt-2">
+                  <span className="text-[9px] font-bold text-sky-600 uppercase block">Ajouter un fichier joint</span>
+                  
+                  <input 
+                    type="text" 
+                    placeholder="URL de la photo" 
+                    value={newPhotoUrl}
+                    onChange={e => setNewPhotoUrl(e.target.value)}
+                    className="w-full bg-white border border-gray-200 text-[10px] p-1.5 rounded-lg outline-none"
+                  />
+                  
+                  <input 
+                    type="text" 
+                    placeholder="Légende (ex: État initial canapé)" 
+                    value={newPhotoCaption}
+                    onChange={e => setNewPhotoCaption(e.target.value)}
+                    className="w-full bg-white border border-gray-200 text-[10px] p-1.5 rounded-lg outline-none"
+                  />
+
+                  <div className="flex justify-between items-center gap-2">
+                    <select 
+                      value={newPhotoBeforeAfter}
+                      onChange={e => setNewPhotoBeforeAfter(e.target.value as any)}
+                      className="bg-white border border-gray-200 text-[9px] p-1 rounded-lg outline-none"
+                    >
+                      <option value="before">État initial (Avant)</option>
+                      <option value="after">Après nettoyage (Après)</option>
+                      <option value="spec">Spécification technique</option>
+                    </select>
+                    <button 
+                      type="button"
+                      onClick={handleAddDocumentPhoto}
+                      className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Joindre
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-slate-50 min-h-screen text-slate-800 flex flex-col md:flex-row font-sans selection:bg-sky-200">
       
@@ -2291,7 +2820,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                     <span className="text-[10px] text-slate-500 font-medium">{doc.status}</span>
                                   </div>
                                   <button 
-                                    onClick={() => { handleViewDoc(doc); }}
+                                    onClick={() => { handleViewDoc(doc); setIsDocModalOpen(true); }}
                                     className="p-1 text-slate-400 hover:text-slate-900 cursor-pointer"
                                   >
                                     <Eye className="w-4 h-4" />
@@ -2407,7 +2936,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                   </td>
                                   <td className="p-4 text-center">
                                     <button 
-                                      onClick={() => setSelectedClient(c)}
+                                      onClick={() => handleSelectClient(c)}
                                       className="bg-sky-50 hover:bg-sky-100 text-sky-600 font-bold px-2.5 py-1 rounded-lg text-[10px] cursor-pointer"
                                     >
                                       Ouvrir historique
@@ -2442,524 +2971,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
           {activeTab === 'documents' && (
             <div className="space-y-6">
               
-              {viewingDoc ? (
-                /* SINGLE DOCUMENT PREVIEW */
-                <div className="space-y-6">
-                  <button 
-                    onClick={() => setViewingDoc(null)}
-                    className="flex items-center space-x-2 text-xs font-bold text-slate-500 hover:text-slate-900 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Retour à la liste des documents</span>
-                  </button>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Invoice sheet style */}
-                    <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-100 p-8 shadow-md space-y-8">
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-start space-x-3.5">
-                          {entrepriseConfig?.logo_url ? (
-                            <img 
-                              src={entrepriseConfig.logo_url} 
-                              alt="Logo" 
-                              className="w-auto h-12 md:h-20 object-contain rounded-2xl border border-slate-100 shadow-sm logo-dynamique-net"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="bg-gradient-to-tr from-sky-400 to-blue-600 p-3.5 rounded-2xl text-white shadow-md">
-                              <Sparkles className="w-5 h-5" />
-                            </div>
-                          )}
-                          <div className="space-y-0.5">
-                            <span className="text-xl font-bold tracking-tight text-slate-900">
-                              {entrepriseConfig?.nom_entreprise || 'Shampooine Le'}
-                            </span>
-                            <p className="text-[10px] text-slate-400 font-medium">Nettoyage haut de gamme de textiles d'ameublement</p>
-                            {entrepriseConfig?.telephone && (
-                              <p className="text-[10px] text-slate-500 font-mono">Tél : {entrepriseConfig.telephone}</p>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="text-right">
-                          <span className={`text-[10px] font-extrabold uppercase px-3 py-1 rounded-full ${
-                            viewingDoc.type === 'devis' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                          }`}>
-                            {viewingDoc.type} #{viewingDoc.number}
-                          </span>
-                          <h3 className="text-lg font-black text-slate-900 mt-2">{viewingDoc.total_amount.toFixed(2)} €</h3>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-xs">
-                        <div>
-                          <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Émetteur / Prestataire</p>
-                          <p className="font-bold text-slate-900 mt-1">{entrepriseConfig?.nom_entreprise || 'Shampooine Le S.A.S'}</p>
-                          <p className="text-slate-500 mt-0.5 whitespace-pre-line">{entrepriseConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</p>
-                          <p className="text-slate-500">{entrepriseConfig?.telephone || '06 12 34 56 78'}</p>
-                        </div>
-
-                        <div>
-                          <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wide">Destinataire (Client)</p>
-                          {(() => {
-                            const cl = clients.find(c => c.id === viewingDoc.client_id);
-                            return cl ? (
-                              <div className="mt-1">
-                                <p className="font-bold text-slate-900">{cl.last_name.toUpperCase()} {cl.first_name}</p>
-                                <p className="text-slate-500">{cl.email}</p>
-                                <p className="text-slate-500">{cl.phone}</p>
-                                <button 
-                                  onClick={() => {
-                                    setSelectedClient(cl);
-                                    setActiveTab('clients');
-                                    setEditClientForm(cl);
-                                    setEditClientModal(true);
-                                  }}
-                                  className="mt-2 text-[10px] font-bold text-sky-600 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded-lg border border-sky-100 flex items-center gap-1 cursor-pointer transition-all"
-                                >
-                                  <span>👤 Consulter / Modifier la Fiche Client</span>
-                                </button>
-                              </div>
-                            ) : (
-                              <p className="text-slate-500 mt-1">Inconnu</p>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      <div className="border-t border-b border-gray-100 py-4 text-xs grid grid-cols-3">
-                        <div>
-                          <span className="text-slate-400 block text-[9px]">DATE D'ÉMISSION</span>
-                          <span className="font-bold text-slate-800">{viewingDoc.date}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[9px]">DATE D'ÉCHÉANCE</span>
-                          <span className="font-bold text-slate-800">{viewingDoc.due_date}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[9px]">STATUT ACTUEL</span>
-                          <span className="font-extrabold text-sky-600">{viewingDoc.status}</span>
-                        </div>
-                      </div>
-
-                      {/* Line items table — adapté B2B/B2C */}
-                      {(() => {
-                        const cl = clients.find(c => c.id === viewingDoc.client_id);
-                        const isB2BDoc = cl?.type_client === 'professionnel';
-                        
-                        // Recalcul local direct des totaux si c'est un Brouillon modifiable
-                        const localTTC = viewingLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                        const localHT = isB2BDoc ? localTTC / 1.20 : localTTC;
-                        const localTVA = isB2BDoc ? localTTC - localHT : 0;
-                        const isBrouillon = viewingDoc.status === 'Brouillon';
-
-                        const updateLocalLineQty = async (index: number, newQty: number) => {
-                          const updatedLines = [...viewingLines];
-                          const line = updatedLines[index];
-                          line.quantity = Math.max(1, newQty);
-                          line.total_price = line.quantity * line.unit_price;
-                          setViewingLines(updatedLines);
-
-                          const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                          const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
-                          const updatedDoc = {
-                            ...viewingDoc,
-                            total_amount: calculatedTTC,
-                            total_ht: calculatedHT,
-                            total_ttc: calculatedTTC
-                          };
-                          setViewingDoc(updatedDoc);
-                          try {
-                            await apiService.saveDevisFacture(updatedDoc, updatedLines);
-                            // refresh global documents list
-                            const freshDocs = await apiService.getDevisFactures();
-                            setDocuments(freshDocs);
-                          } catch(err) {
-                            console.error(err);
-                          }
-                        };
-
-                        const deleteLocalLine = async (index: number) => {
-                          if (viewingLines.length <= 1) {
-                            onToast("Un document doit posséder au moins une ligne de prestation.", "info");
-                            return;
-                          }
-                          const updatedLines = viewingLines.filter((_, idx) => idx !== index);
-                          setViewingLines(updatedLines);
-
-                          const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                          const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
-                          const updatedDoc = {
-                            ...viewingDoc,
-                            total_amount: calculatedTTC,
-                            total_ht: calculatedHT,
-                            total_ttc: calculatedTTC
-                          };
-                          setViewingDoc(updatedDoc);
-                          try {
-                            await apiService.saveDevisFacture(updatedDoc, updatedLines);
-                            const freshDocs = await apiService.getDevisFactures();
-                            setDocuments(freshDocs);
-                            onToast("Ligne supprimée !", "success");
-                          } catch(err) {
-                            console.error(err);
-                          }
-                        };
-
-                        const addPrestationToBrouillon = async (prestationId: string) => {
-                          const p = prestations.find(x => x.id === prestationId);
-                          if (!p) return;
-                          
-                          const factor = isB2BDoc ? 1.25 : 1.0;
-                          const unitVal = p.base_price * factor;
-                          const priceVal = isB2BDoc ? unitVal / 1.20 : unitVal;
-
-                          const newLine = {
-                            devis_facture_id: viewingDoc.id,
-                            prestation_name: p.name,
-                            quantity: 1,
-                            unit_price: priceVal,
-                            total_price: priceVal
-                          } as any;
-
-                          const updatedLines = [...viewingLines, newLine];
-                          setViewingLines(updatedLines);
-
-                          const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                          const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
-                          const updatedDoc = {
-                            ...viewingDoc,
-                            total_amount: calculatedTTC,
-                            total_ht: calculatedHT,
-                            total_ttc: calculatedTTC
-                          };
-                          setViewingDoc(updatedDoc);
-                          try {
-                            await apiService.saveDevisFacture(updatedDoc, updatedLines);
-                            const freshDocs = await apiService.getDevisFactures();
-                            setDocuments(freshDocs);
-                            onToast("Prestation ajoutée au brouillon !", "success");
-                          } catch(err) {
-                            console.error(err);
-                          }
-                        };
-
-                        return (
-                          <>
-                            <table className="w-full text-xs text-left">
-                              <thead>
-                                <tr className="border-b border-gray-100 text-slate-400 font-bold uppercase text-[9px]">
-                                  <th className="py-2">Désignation de la prestation</th>
-                                  <th className="py-2 text-center w-24">Qté</th>
-                                  <th className="py-2 text-right">{isB2BDoc ? 'Prix Unit. HT' : 'Prix Unit. TTC'}</th>
-                                  <th className="py-2 text-right">{isB2BDoc ? 'Total Ligne HT' : 'Total Ligne TTC'}</th>
-                                  {isBrouillon && <th className="py-2 text-center w-12">Actions</th>}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {viewingLines.map((line, idx) => (
-                                  <tr key={idx} className="border-b border-slate-50 text-slate-800">
-                                    <td className="py-2.5 font-semibold text-slate-900">{line.prestation_name}</td>
-                                    <td className="py-2.5 text-center">
-                                      {isBrouillon ? (
-                                        <input 
-                                          type="number" 
-                                          min="1" 
-                                          value={line.quantity} 
-                                          onChange={(e) => updateLocalLineQty(idx, parseInt(e.target.value) || 1)}
-                                          className="w-14 text-center px-1 py-0.5 rounded border border-gray-200 outline-none focus:ring-1 focus:ring-sky-500"
-                                        />
-                                      ) : (
-                                        line.quantity
-                                      )}
-                                    </td>
-                                    <td className="py-2.5 text-right">{line.unit_price.toFixed(2)} €</td>
-                                    <td className="py-2.5 text-right font-bold text-slate-900">{line.total_price.toFixed(2)} €</td>
-                                    {isBrouillon && (
-                                      <td className="py-2.5 text-center">
-                                        <button 
-                                          onClick={() => deleteLocalLine(idx)}
-                                          className="text-red-500 hover:text-red-700 p-1 cursor-pointer transition-colors"
-                                          title="Supprimer la ligne"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </td>
-                                    )}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-
-                            {/* Brouillon additions bar */}
-                            {isBrouillon && (
-                              <div className="bg-sky-50/50 p-4 rounded-2xl border border-sky-100/60 mt-4 flex flex-col sm:flex-row items-center gap-3">
-                                <span className="text-[10px] font-extrabold text-sky-700 uppercase shrink-0">Ajouter au brouillon :</span>
-                                <select
-                                  onChange={(e) => {
-                                    if (e.target.value) {
-                                      addPrestationToBrouillon(e.target.value);
-                                      e.target.value = '';
-                                    }
-                                  }}
-                                  className="flex-1 bg-white border border-sky-100 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-sky-500"
-                                  defaultValue=""
-                                >
-                                  <option value="" disabled>Sélectionner une prestation du catalogue...</option>
-                                  {prestations.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name} ({p.base_price.toFixed(2)} €)</option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
-
-                            <div className="flex flex-col items-end space-y-1 pt-4 border-t border-gray-100">
-                              {isB2BDoc ? (
-                                <>
-                                  <div className="text-xs text-slate-400 flex justify-between w-72">
-                                    <span>Total Global HT :</span>
-                                    <span className="text-slate-900 font-semibold">{localHT.toFixed(2)} €</span>
-                                  </div>
-                                  <div className="text-xs text-slate-400 flex justify-between w-72">
-                                    <span>TVA (20%) :</span>
-                                    <span className="text-slate-900 font-semibold">{localTVA.toFixed(2)} €</span>
-                                  </div>
-                                  <div className="text-sm font-bold text-indigo-700 flex justify-between w-72 pt-2 border-t border-slate-100">
-                                    <span>Total Global TTC (Net à payer) :</span>
-                                    <span className="text-indigo-600 text-base font-black">{localTTC.toFixed(2)} €</span>
-                                  </div>
-                                  <div className="mt-1">
-                                    <span className="text-[8px] text-indigo-400 font-medium italic">🏢 Document B2B — TVA 20% détaillée</span>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="text-xs text-slate-400 flex justify-between w-64">
-                                    <span>Total global TTC :</span>
-                                    <span className="text-slate-900 font-semibold">{localTTC.toFixed(2)} €</span>
-                                  </div>
-                                  <div className="text-xs text-slate-400 flex justify-between w-64">
-                                    <span>TVA non applicable (art. 293B du CGI) :</span>
-                                    <span className="text-slate-900 font-semibold">0.00 €</span>
-                                  </div>
-                                  <div className="text-sm font-bold text-slate-900 flex justify-between w-64 pt-2 border-t border-slate-100">
-                                    <span>Total Net à payer (TTC) :</span>
-                                    <span className="text-sky-600 text-base font-black">{localTTC.toFixed(2)} €</span>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          </>
-                        );
-                      })()}
-
-                      {viewingDoc.notes && (
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs text-slate-500">
-                          <p className="font-bold uppercase text-[9px] text-slate-400">Notes &amp; conditions de règlement</p>
-                          <p className="mt-1 italic">{viewingDoc.notes}</p>
-                        </div>
-                      )}
-
-                      {/* Dynamic professional legal notice footer block */}
-                      <div className="pt-6 border-t border-slate-100 flex flex-col items-center justify-center text-center space-y-1.5 mt-8 text-[9px] text-slate-400 font-medium">
-                        <p className="font-bold text-slate-700">
-                          {entrepriseConfig?.nom_entreprise || 'Shampooine Le'} — {entrepriseConfig?.forme_juridique || 'SARL'} au Capital de {entrepriseConfig?.capital_social || '10 000 €'}
-                        </p>
-                        <p>
-                          Siège Social : {entrepriseConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}
-                        </p>
-                        <p className="font-mono text-[8px] text-slate-400/80">
-                          SIRET : {entrepriseConfig?.siret || '123 456 789 00021'} | Code APE : {entrepriseConfig?.code_ape || '8121Z'} | TVA Intracommunautaire : {entrepriseConfig?.tva_intracommunautaire || 'FR 12 123456789'}
-                        </p>
-                        <div className="h-1 w-12 bg-sky-200 rounded-full my-1"></div>
-                        <p className="text-[7.5px] text-slate-400/60 leading-normal">
-                          Dispositions applicables : Prestations d'injection-extraction et de détachage thermique de canapés, tapis et fauteuils. Tous nos tarifs s'entendent nets de taxes, TVA non applicable en vertu de l'article 293B du CGI.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Left: action sidebar */}
-                    <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-6 shrink-0 self-start">
-                      <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Actions Administrateur</h4>
-                      
-                      <div className="space-y-3.5">
-                        
-                        {/* Clôture Paiement Virement Admin */}
-                        {viewingDoc.type === 'facture' && viewingDoc.status === 'Facturé' && viewingDoc.moyen_paiement === 'VIREMENT' && (
-                          <button
-                            onClick={async () => {
-                              try {
-                                const updated = await apiService.updateDocumentStatus(viewingDoc.id, 'Payé');
-                                // also update payment parameters
-                                const updatedFull = {
-                                  ...viewingDoc,
-                                  status: 'Payé' as DocumentStatus,
-                                  paiement_valide: true,
-                                  date_paiement: new Date().toISOString()
-                                };
-                                await apiService.saveDevisFacture(updatedFull, viewingLines);
-                                setViewingDoc(updatedFull);
-                                onToast("Paiement validé et facture clôturée avec succès !", "success");
-                                // reload documents
-                                const freshDocs = await apiService.getDevisFactures();
-                                setDocuments(freshDocs);
-                              } catch (err) {
-                                onToast("Erreur lors de la validation du paiement.", "info");
-                              }
-                            }}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-md shadow-emerald-600/10 cursor-pointer transition-all"
-                          >
-                            <Check className="w-4 h-4" />
-                            <span>Clôturer et valider le paiement</span>
-                          </button>
-                        )}
-
-                        <div>
-                          <label className="text-[10px] text-slate-400 font-bold block mb-1">METTRE À JOUR LE STATUT</label>
-                          <select 
-                            value={viewingDoc.status}
-                            onChange={(e) => handleStatusChange(viewingDoc.id, e.target.value as DocumentStatus)}
-                            className="bg-slate-50 border border-slate-100 text-xs px-3 py-2 rounded-xl w-full focus:ring-1 focus:ring-sky-500 focus:bg-white outline-none"
-                          >
-                            <option value="Brouillon">Brouillon</option>
-                            <option value="Envoyé au client">Envoyé au client</option>
-                            <option value="Signé/Accepté">Signé/Accepté</option>
-                            <option value="Facturé">Facturé</option>
-                            <option value="Payé">Payé</option>
-                          </select>
-                        </div>
-
-                        {/* Send / Resend Document Action Button */}
-                        <button
-                          onClick={() => handleSendOrResendDoc(viewingDoc)}
-                          disabled={sendingDocId === viewingDoc.id}
-                          className={`w-full font-bold py-3.5 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all ${
-                            sendingDocId === viewingDoc.id 
-                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                              : 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white shadow-lg shadow-sky-500/20'
-                          }`}
-                        >
-                          <Mail className="w-4 h-4" />
-                          <span>
-                            {sendingDocId === viewingDoc.id 
-                              ? "Envoi en cours..."
-                              : viewingDoc.type === 'devis'
-                                ? viewingDoc.status === 'Brouillon'
-                                  ? "Envoyer le devis"
-                                  : "Renvoyer le devis"
-                                : viewingDoc.status === 'Brouillon'
-                                  ? "Envoyer la facture"
-                                  : "Renvoyer la facture"
-                            }
-                          </span>
-                        </button>
-
-                        {viewingDoc.type === 'devis' && (
-                          <button 
-                            onClick={() => handleConvertToInvoice(viewingDoc.id, viewingDoc.number)}
-                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 shadow-md shadow-emerald-500/10 cursor-pointer transition-colors"
-                          >
-                            <ArrowLeftRight className="w-4 h-4" />
-                            <span>Convertir en Facture</span>
-                          </button>
-                        )}
-
-                        <button 
-                          onClick={() => { window.print(); }}
-                          className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all"
-                        >
-                          <Printer className="w-4 h-4" />
-                          <span>Imprimer / Format PDF</span>
-                        </button>
-
-                        <button 
-                          onClick={() => handleDeleteDocument(viewingDoc.id, viewingDoc.number)}
-                          className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center space-x-2 cursor-pointer transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          <span>Supprimer le document</span>
-                        </button>
-
-                        {/* Photos et Fichiers joints section */}
-                        <div className="pt-4 border-t border-slate-100 space-y-3">
-                          <span className="text-[10px] text-slate-400 font-bold block uppercase">PHOTOS &amp; FICHIERS JOINTS ({viewingPhotos.length})</span>
-                          
-                          {viewingPhotos.length === 0 ? (
-                            <p className="text-[11px] text-slate-400 italic">Aucune photo ni fichier joint lié.</p>
-                          ) : (
-                            <div className="grid grid-cols-2 gap-2">
-                              {viewingPhotos.map(p => (
-                                <div key={p.id} className="relative group rounded-xl overflow-hidden border border-slate-100 bg-slate-50">
-                                  <img 
-                                    src={p.photo_url} 
-                                    alt={p.caption} 
-                                    referrerPolicy="no-referrer"
-                                    className="w-full h-16 object-cover" 
-                                  />
-                                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-1">
-                                    <button 
-                                      type="button"
-                                      onClick={() => handleDeleteDocumentPhoto(p.id)}
-                                      className="text-white hover:text-red-400 p-1 cursor-pointer"
-                                      title="Supprimer la photo"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                  <span className={`absolute bottom-0 left-0 right-0 text-[8px] truncate bg-black/50 text-white px-1 text-center uppercase font-bold`}>
-                                    {p.before_after === 'before' ? 'Avant' : p.before_after === 'after' ? 'Après' : 'Tissu'}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Ajouter un fichier */}
-                          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2 mt-2">
-                            <span className="text-[9px] font-bold text-sky-600 uppercase block">Ajouter un fichier joint</span>
-                            
-                            <input 
-                              type="text" 
-                              placeholder="URL de la photo" 
-                              value={newPhotoUrl}
-                              onChange={e => setNewPhotoUrl(e.target.value)}
-                              className="w-full bg-white border border-gray-200 text-[10px] p-1.5 rounded-lg outline-none"
-                            />
-                            
-                            <input 
-                              type="text" 
-                              placeholder="Légende (ex: État initial canapé)" 
-                              value={newPhotoCaption}
-                              onChange={e => setNewPhotoCaption(e.target.value)}
-                              className="w-full bg-white border border-gray-200 text-[10px] p-1.5 rounded-lg outline-none"
-                            />
-
-                            <div className="flex justify-between items-center gap-2">
-                              <select 
-                                value={newPhotoBeforeAfter}
-                                onChange={e => setNewPhotoBeforeAfter(e.target.value as any)}
-                                className="bg-white border border-gray-200 text-[9px] p-1 rounded-lg outline-none"
-                              >
-                                <option value="before">État initial (Avant)</option>
-                                <option value="after">Après nettoyage (Après)</option>
-                                <option value="spec">Spécification technique</option>
-                              </select>
-                              <button 
-                                type="button"
-                                onClick={handleAddDocumentPhoto}
-                                className="bg-sky-500 hover:bg-sky-600 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-                              >
-                                Joindre
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
+              {viewingDoc ? renderSingleDocumentPreview(viewingDoc, () => setViewingDoc(null)) : (
                 /* MAIN LIST VIEW */
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -5761,6 +5773,27 @@ export default {
                 Mettre à jour la fiche client
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {isDocModalOpen && viewingDoc && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-50 w-full max-w-6xl rounded-3xl border border-slate-100 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white px-6 py-4 flex justify-between items-center border-b border-gray-100 shrink-0">
+              <span className="font-extrabold text-slate-900 text-sm">Visualisation Document : {viewingDoc.number} ({viewingDoc.type.toUpperCase()})</span>
+              <button 
+                onClick={() => { setIsDocModalOpen(false); setViewingDoc(null); }} 
+                className="text-slate-400 hover:text-slate-900 p-2 rounded-full hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {renderSingleDocumentPreview(viewingDoc, () => { setIsDocModalOpen(false); setViewingDoc(null); })}
+            </div>
           </div>
         </div>
       )}

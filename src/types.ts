@@ -17,6 +17,7 @@ export interface Client {
   siret?: string;
   tva_intracommunautaire?: string;
   created_at: string;
+  documents?: DevisFacture[];
 }
 
 export interface ClientAdresse {
