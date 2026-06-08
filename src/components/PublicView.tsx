@@ -48,6 +48,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
 
   // Dynamic Pricing Calculator State
   const [calcItems, setCalcItems] = useState<{id: string; qty: number}[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
 
   useEffect(() => {
     if (propConfig) {
@@ -63,8 +64,32 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
         if (prests.length > 0) {
           setSelectedPrestationId(prests[0].id);
         }
+
+        // Fetch real reviews from D1 (fallback to mock only if empty)
+        const dbClients = await apiService.getClients();
+        const dbReviews = await apiService.getClientReviews(true);
+        if (dbReviews && dbReviews.length > 0) {
+          const mappedReviews = dbReviews.map((r: any) => {
+            const clientObj = dbClients.find((c: any) => c.id === r.client_id);
+            const clientName = r.afficher_nom && clientObj 
+              ? `${clientObj.first_name} ${clientObj.last_name[0]}.` 
+              : "Client Anonyme";
+            return {
+              id: r.id,
+              name: clientName,
+              category: "Prestation",
+              text: r.commentaire,
+              rating: r.note,
+              date: r.created_at ? new Date(r.created_at).toLocaleDateString('fr-FR') : "Récemment"
+            };
+          });
+          setReviews(mappedReviews);
+        } else {
+          setReviews(TESTIMONIALS);
+        }
       } catch (err) {
-        console.error("Error loading prestations", err);
+        console.error("Error loading prestations or reviews", err);
+        setReviews(TESTIMONIALS);
       } finally {
         setLoadingPrestations(false);
       }
@@ -171,52 +196,32 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
         raison_sociale: clientType === 'professionnel' ? companyName : undefined,
         siret: clientType === 'professionnel' ? siret : undefined,
         tva_intracommunautaire: clientType === 'professionnel' ? vatNumber : undefined,
-        notes: `Demande de devis soumise depuis le site web.\nPrestation principale souhaitée : ${
-          prestations.find(p => p.id === selectedPrestationId)?.name || 'Non spécifiée'
-        }.\nMessage client : ${message || 'Aucun message.'}`
+        notes: `Demande de devis soumise depuis le site web.\nMessage client: ${message || 'Aucun message.'}`
       });
 
       // 2. Générer des lignes de devis
       const factor = clientType === 'professionnel' ? 1.25 : 1.0;
       const lines = [];
       let baseSum = 0;
-      const primaryPres = prestations.find(p => p.id === selectedPrestationId);
-      if (primaryPres) {
-        const lineTotal = primaryPres.base_price * factor * areaQty;
-        baseSum += lineTotal;
-        lines.push({
-          prestation_name: `${primaryPres.name}${clientType === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
-          quantity: areaQty,
-          unit_price: primaryPres.base_price * factor,
-          total_price: lineTotal
-        });
-      }
-
-      // Si le calculateur contenait d'autres éléments, on peut les ajouter
-      calcItems.forEach(item => {
-        const p = prestations.find(pres => pres.id === item.id);
-        if (p && p.id !== selectedPrestationId) {
-          const lineTotal = p.base_price * factor * item.qty;
-          baseSum += lineTotal;
-          lines.push({
-            prestation_name: `${p.name}${clientType === 'professionnel' ? ' (Grade Professionnel)' : ''}`,
-            quantity: item.qty,
-            unit_price: p.base_price * factor,
-            total_price: lineTotal
-          });
-        }
+      
+      // We use a clean placeholder item for the estimate request that will be edited by the artisan
+      const placeholderPrice = 0.0;
+      lines.push({
+        prestation_name: "Chaise Classique 1 Place (Prestation à définir)",
+        quantity: 1,
+        unit_price: placeholderPrice * factor,
+        total_price: placeholderPrice * factor
       });
 
-      // 2b. Add Night Surcharge Line if startTime falls under night shift rules
+      // 2b. Add Night Surcharge Line if startTime falls under night shift rules (surcharge of 0.0 since base is 0.0)
       const isNight = isNightShiftCrossed(startTime);
       const pct = entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25;
-      if (isNight && baseSum > 0) {
-        const surchargeVal = Math.round(baseSum * (pct / 100) * 100) / 100;
+      if (isNight) {
         lines.push({
           prestation_name: `Majoration Horaires de Nuit (${pct}%)`,
           quantity: 1,
-          unit_price: surchargeVal,
-          total_price: surchargeVal
+          unit_price: 0,
+          total_price: 0
         });
       }
 
@@ -738,37 +743,6 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                    Élément principal à nettoyer *
-                  </label>
-                  <select
-                    value={selectedPrestationId}
-                    onChange={e => setSelectedPrestationId(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none transition-all"
-                  >
-                    {prestations.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                    Volume / Nombre d'éléments *
-                  </label>
-                  <input 
-                    type="number"
-                    min="1"
-                    required
-                    value={areaQty}
-                    onChange={e => setAreaQty(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none transition-all"
-                  />
-                </div>
-              </div>
-
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                   <Calendar className="w-3 h-3 text-sky-500" />
@@ -824,7 +798,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {TESTIMONIALS.map(t => (
+            {reviews.map(t => (
               <div key={t.id} className="bg-gray-50 rounded-2xl p-6 border border-gray-100 flex flex-col justify-between">
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
