@@ -107,7 +107,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
     loadCompany();
   }, []);
 
-  const [startTime, setStartTime] = useState('');
+  const [startTime, setStartTime] = useState('09:00');
 
   // Helper check to identify if a booked timeslot is a night hour (using dynamic settings set by artisan)
   const isNightShiftCrossed = (startHm: string): boolean => {
@@ -744,21 +744,36 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-sky-500" />
-                  <span>Heure de début souhaitée (Transparence majoration)</span>
-                </label>
-                <input 
-                  type="time"
-                  value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50/50 text-xs focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none transition-all"
-                />
-                {startTime && isNightShiftCrossed(startTime) && (
-                  <p className="text-[10px] text-amber-600 font-semibold bg-amber-50 p-2 rounded-lg border border-amber-100">
-                    ⚠️ L'heure choisie ({startTime}) est soumise à la majoration de nuit ({entrepriseConfig?.plage_majoration_debut || '19:00'} - {entrepriseConfig?.plage_majoration_fin || '06:00'}). Une majoration de {entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25}% sera automatiquement appliquée.
-                  </p>
-                )}
+                <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">Plage horaire souhaitée *</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStartTime('09:00')}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      !isNightShiftCrossed(startTime)
+                        ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    ☀️ Journée
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStartTime('23:00')}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      isNightShiftCrossed(startTime)
+                        ? 'bg-sky-50 border-sky-400 text-sky-700 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    🌙 Nuit
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-400 italic mt-1.5 leading-normal">
+                  {!isNightShiftCrossed(startTime)
+                    ? "(Horaires applicables : 06:00 - 22:00)"
+                    : `(⚠️ Soumis à majoration de nuit de ${entrepriseConfig?.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25}% : 22:00 - 06:00)`}
+                </p>
               </div>
 
               <div className="space-y-1.5">
