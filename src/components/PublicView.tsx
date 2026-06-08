@@ -291,7 +291,6 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
           <div className="hidden md:flex items-center space-x-8 text-sm font-medium text-gray-600">
             <a href="#services" className="hover:text-sky-500 transition-colors">Nos Services</a>
             <a href="#avant-apres" className="hover:text-sky-500 transition-colors">Démonstration</a>
-            <a href="#calculator" className="hover:text-sky-500 transition-colors">Simulateur de Tarifs</a>
             <a href="#testimonials" className="hover:text-sky-500 transition-colors">Avis clients</a>
             <a href="#devis-form-anchor" className="bg-sky-50 text-sky-600 px-4 py-2 rounded-lg hover:bg-sky-100 transition-colors duration-200">Obtenir un devis</a>
           </div>
@@ -553,109 +552,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
         </div>
       </section>
 
-      {/* DYNAMIC CALCULATOR & SIMULATOR SECTION */}
-      <section id="calculator" className="py-20 px-6 bg-white border-b border-gray-100">
-        <div className="max-w-4xl mx-auto space-y-12">
-          <div className="text-center space-y-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-sky-500">Zéro surprise, transparence totale</span>
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">Estimez votre nettoyage en direct</h2>
-            <p className="text-gray-500 text-sm max-w-lg mx-auto">
-              Sélectionnez les assises et surfaces à traiter pour simuler instantanément un tarif transparent et préférentiel.
-            </p>
-          </div>
 
-          <div className="bg-gradient-to-tr from-sky-50 to-indigo-50/10 rounded-3xl border border-sky-100 p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                <Calculator className="w-5 h-5 text-sky-500" />
-                <span>1. Indiquez vos besoins</span>
-              </h3>
-
-              <div className="space-y-4">
-                {prestations.map(p => {
-                  const currentItem = calcItems.find(item => item.id === p.id);
-                  const qty = currentItem ? currentItem.qty : 0;
-                  return (
-                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
-                      <div className="pr-4">
-                        <p className="text-xs font-bold text-gray-900 leading-tight">{p.name}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{(p.base_price * (clientType === 'professionnel' ? 1.25 : 1.0)).toFixed(2)} € / {p.unit_label}{clientType === 'professionnel' ? ' (Pro HT)' : ''}</p>
-                      </div>
-
-                      <div className="flex items-center space-x-2.5">
-                        <button 
-                          onClick={() => updateCalcQty(p.id, qty - 1)}
-                          className="w-8 h-8 bg-gray-50 hover:bg-gray-100 border border-gray-100 text-gray-800 rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition-colors"
-                        >
-                          -
-                        </button>
-                        <span className="w-8 text-center text-xs font-bold text-gray-900">{qty}</span>
-                        <button 
-                          onClick={() => updateCalcQty(p.id, qty + 1)}
-                          className="w-8 h-8 bg-gray-50 hover:bg-gray-100 border border-gray-100 text-gray-800 rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition-colors"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-sky-100 p-6 flex flex-col justify-between shadow-xl">
-              <div className="space-y-6">
-                <div className="flex justify-between items-center pb-4 border-b border-gray-100">
-                  <span className="text-xs font-medium text-gray-500">Récapitulatif de l'estimation</span>
-                  <span className="text-[10px] text-green-600 font-extrabold bg-green-50 px-2.5 py-1 rounded-full">Devis instantané</span>
-                </div>
-
-                {calcItems.length === 0 ? (
-                  <div className="py-12 text-center text-gray-400 space-y-2">
-                    <p className="text-sm">Votre simulateur est vide.</p>
-                    <p className="text-xs text-gray-300">Ajoutez des prestations à gauche pour générer votre estimation.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3.5 max-h-48 overflow-y-auto pr-1">
-                    {calcItems.map(item => {
-                      const p = prestations.find(pres => pres.id === item.id);
-                      if (!p) return null;
-                      const factor = clientType === 'professionnel' ? 1.25 : 1.0;
-                      return (
-                        <div key={item.id} className="flex justify-between items-center text-xs text-gray-700">
-                           <div>
-                            <span className="font-semibold">{p.name} {clientType === 'professionnel' ? '(Pro)' : ''}</span>
-                            <span className="text-gray-400 block">Qté : {item.qty} × {(p.base_price * factor).toFixed(2)} €</span>
-                          </div>
-                          <span className="font-bold text-gray-900">{(p.base_price * factor * item.qty).toFixed(2)} €</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-6 mt-6 border-t border-gray-100 space-y-4">
-                <div className="flex justify-between items-baseline">
-                  <span className="text-sm font-bold text-gray-900">Total estimé :</span>
-                  <span className="text-3xl font-black text-sky-600">{calculateTotal().toFixed(2)} €</span>
-                </div>
-                <p className="text-[10px] text-gray-400">
-                  *Ce prix est à titre indicatif selon votre saisie. Un devis définitif gratuit vous sera envoyé par notre artisan après examen.
-                </p>
-
-                <button 
-                  onClick={transferCalcToForm}
-                  className="w-full bg-sky-500 hover:bg-sky-600 text-white py-3.5 rounded-xl text-xs font-bold shadow-md shadow-sky-500/10 cursor-pointer flex items-center justify-center space-x-2 transition-all duration-200"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Transférer au formulaire de devis</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* FREE QUOTE REQUEST FORM */}
       <section id="devis-form-anchor" className="py-20 px-6 bg-gradient-to-b from-white to-sky-50/50">
