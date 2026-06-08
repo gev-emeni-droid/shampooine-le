@@ -1879,9 +1879,10 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
               const cl = clients.find(c => c.id === doc.client_id);
               const isB2BDoc = cl?.type_client === 'professionnel';
               
-              const localTTC = viewingLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-              const localHT = isB2BDoc ? localTTC / 1.20 : localTTC;
-              const localTVA = isB2BDoc ? localTTC - localHT : 0;
+              const sumOfLines = viewingLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+              const localTTC = sumOfLines;
+              const localHT = isB2BDoc ? sumOfLines : (sumOfLines / 1.20);
+              const localTVA = isB2BDoc ? 0 : (localTTC - localHT);
               const isBrouillon = doc.status === 'Brouillon';
 
               const updateLocalLineQty = async (index: number, newQty: number) => {
@@ -1892,7 +1893,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                 setViewingLines(updatedLines);
 
                 const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                const calculatedHT = isB2BDoc ? calculatedTTC : (calculatedTTC / 1.20);
                 const updatedDoc = {
                   ...doc,
                   total_amount: calculatedTTC,
@@ -1918,7 +1919,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                 setViewingLines(updatedLines);
 
                 const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                const calculatedHT = isB2BDoc ? calculatedTTC : (calculatedTTC / 1.20);
                 const updatedDoc = {
                   ...doc,
                   total_amount: calculatedTTC,
@@ -1940,9 +1941,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                 const p = prestations.find(x => x.id === prestationId);
                 if (!p) return;
                 
-                const factor = isB2BDoc ? 1.25 : 1.0;
-                const unitVal = p.base_price * factor;
-                const priceVal = isB2BDoc ? unitVal / 1.20 : unitVal;
+                const priceVal = isB2BDoc ? (p.base_price / 1.20) : p.base_price;
 
                 const newLine = {
                   devis_facture_id: doc.id,
@@ -1956,7 +1955,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                 setViewingLines(updatedLines);
 
                 const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
-                const calculatedHT = isB2BDoc ? calculatedTTC / 1.20 : calculatedTTC;
+                const calculatedHT = isB2BDoc ? calculatedTTC : (calculatedTTC / 1.20);
                 const updatedDoc = {
                   ...doc,
                   total_amount: calculatedTTC,
@@ -2047,18 +2046,18 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                       <>
                         <div className="text-xs text-slate-400 flex justify-between w-72">
                           <span>Total Global HT :</span>
-                          <span className="text-slate-900 font-semibold">{localHT.toFixed(2)} €</span>
+                          <span className="text-slate-950 font-semibold">{localHT.toFixed(2)} €</span>
                         </div>
                         <div className="text-xs text-slate-400 flex justify-between w-72">
-                          <span>TVA (20%) :</span>
-                          <span className="text-slate-900 font-semibold">{localTVA.toFixed(2)} €</span>
+                          <span>TVA non applicable :</span>
+                          <span className="text-slate-500 font-semibold">0.00 €</span>
                         </div>
                         <div className="text-sm font-bold text-indigo-700 flex justify-between w-72 pt-2 border-t border-slate-100">
-                          <span>Total Global TTC (Net à payer) :</span>
-                          <span className="text-indigo-600 text-base font-black">{localTTC.toFixed(2)} €</span>
+                          <span>Total Net à payer :</span>
+                          <span className="text-indigo-600 text-base font-black">{localHT.toFixed(2)} €</span>
                         </div>
                         <div className="mt-1">
-                          <span className="text-[8px] text-indigo-400 font-medium italic">🏢 Document B2B — TVA 20% détaillée</span>
+                          <span className="text-[9px] text-indigo-500 font-bold uppercase">TVA non applicable, art. 293 B du CGI</span>
                         </div>
                       </>
                     ) : (
@@ -2068,8 +2067,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                           <span className="text-slate-900 font-semibold">{localTTC.toFixed(2)} €</span>
                         </div>
                         <div className="text-xs text-slate-400 flex justify-between w-64">
-                          <span>TVA non applicable (art. 293B du CGI) :</span>
-                          <span className="text-slate-900 font-semibold">0.00 €</span>
+                          <span>Part de TVA (20%) incluse :</span>
+                          <span className="text-slate-900 font-semibold">{localTVA.toFixed(2)} €</span>
                         </div>
                         <div className="text-sm font-bold text-slate-900 flex justify-between w-64 pt-2 border-t border-slate-100">
                           <span>Total Net à payer (TTC) :</span>
@@ -5323,8 +5322,8 @@ export default {
                 />
               </div>
 
-              {/* Date, Heure, Durée */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Date, Durée */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Date planning *</span>
                   <input 
@@ -5332,16 +5331,6 @@ export default {
                     required
                     value={editApptForm.date}
                     onChange={e => setEditApptForm({ ...editApptForm, date: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Heure de début *</span>
-                  <input 
-                    type="time"
-                    required
-                    value={editApptForm.start_time}
-                    onChange={e => handleEditStartTimeChange(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
                   />
                 </div>
@@ -5357,6 +5346,58 @@ export default {
                     className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Plage Horaire Toggle buttons */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Plage Horaire / Heure d'intervention *</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const baseLines = editApptLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                      setEditApptLines(baseLines);
+                      setEditApptForm(prev => ({ ...prev, start_time: '09:00' }));
+                      setPreviousStartWasNight(false);
+                    }}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                      !isNightShiftCrossed(editApptForm.start_time)
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    ☀️ Journée
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const baseLines = editApptLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                      const baseSum = baseLines.reduce((acc, l) => acc + l.total_price, 0);
+                      const surchargeAmount = Number((baseSum * (surchargePct / 100)).toFixed(2));
+                      const newLine = {
+                        prestation_name: `Majoration Horaires de Nuit (${surchargePct}%)`,
+                        quantity: 1,
+                        unit_price: surchargeAmount,
+                        total_price: surchargeAmount
+                      };
+                      setEditApptLines([...baseLines, newLine]);
+                      setEditApptForm(prev => ({ ...prev, start_time: '23:00' }));
+                      setPreviousStartWasNight(true);
+                    }}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                      isNightShiftCrossed(editApptForm.start_time)
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    🌙 Nuit
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 italic mt-1 leading-normal">
+                  {!isNightShiftCrossed(editApptForm.start_time)
+                    ? "(Horaires applicables : 06:00 - 22:00)"
+                    : `(⚠️ Soumis à majoration de nuit : 22:00 - 06:00)`}
+                </p>
               </div>
 
               {/* Équipe assignée */}

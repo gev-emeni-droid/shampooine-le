@@ -166,8 +166,8 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
   const calculateTotal = () => {
     const baseTotal = calcItems.reduce((total, item) => {
       const p = prestations.find(prest => prest.id === item.id);
-      const factor = clientType === 'professionnel' ? 1.25 : 1.0;
-      return total + (p ? p.base_price * factor * item.qty : 0);
+      const price = p ? (clientType === 'professionnel' ? p.base_price / 1.20 : p.base_price) : 0;
+      return total + (price * item.qty);
     }, 0);
     return baseTotal * getNightMultiplier();
   };
@@ -200,17 +200,17 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
       });
 
       // 2. Générer des lignes de devis
-      const factor = clientType === 'professionnel' ? 1.25 : 1.0;
       const lines = [];
       let baseSum = 0;
       
       // We use a clean placeholder item for the estimate request that will be edited by the artisan
       const placeholderPrice = 0.0;
+      const priceVal = clientType === 'professionnel' ? placeholderPrice / 1.20 : placeholderPrice;
       lines.push({
         prestation_name: "Chaise Classique 1 Place (Prestation à définir)",
         quantity: 1,
-        unit_price: placeholderPrice * factor,
-        total_price: placeholderPrice * factor
+        unit_price: priceVal,
+        total_price: priceVal
       });
 
       // 2b. Add Night Surcharge Line if startTime falls under night shift rules (surcharge of 0.0 since base is 0.0)
@@ -499,19 +499,6 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
               onMouseMove={handleSliderMove}
               onTouchMove={handleSliderMove}
             >
-              {/* TOP DYNAMIC TEXT BADGE */}
-              <div className="absolute top-4 left-4 z-30 pointer-events-none">
-                <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm shadow-sm ${
-                  sliderPosition < 50 
-                    ? 'bg-amber-800/95 text-white'
-                    : 'bg-sky-500/90 text-white'
-                }`}>
-                  {sliderPosition < 55 
-                    ? `AVANT ${entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}` 
-                    : `APRÈS ${entrepriseConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}`}
-                </span>
-              </div>
-
               {/* BACK - Clean State (After) */}
               <div className="absolute inset-0 w-full h-full">
                 <img 
@@ -519,16 +506,6 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                   alt="Après nettoyage" 
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
-                <div className="absolute top-4 right-4 z-10 flex items-center pointer-events-none">
-                  <div className="flex space-x-0.5 bg-black/35 p-1 rounded-lg backdrop-blur-sm">
-                    {[1, 2, 3, 4, 5].map(i => <Star key={i} className="w-3 h-3 text-amber-400 fill-current" />)}
-                  </div>
-                </div>
-                <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
-                  <span className="text-[10px] text-white font-extrabold bg-sky-500/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
-                    DÉSINFICTÉ &amp; RAVIVÉ 100% — Velours préservé
-                  </span>
-                </div>
               </div>
 
               {/* OVERLAY FRONT - Dirty State (Before) */}
@@ -542,11 +519,6 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
                     alt="Avant nettoyage" 
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                   />
-                  <div className="absolute bottom-4 left-4 right-4 z-10 text-center">
-                    <span className="text-[10px] text-white font-extrabold bg-amber-900/80 backdrop-blur-sm px-3 py-1.5 rounded-full inline-block">
-                      TACHES INCRUSTÉES, AURÉOLES &amp; SÉBUM
-                    </span>
-                  </div>
                 </div>
               </div>
 

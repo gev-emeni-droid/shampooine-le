@@ -356,9 +356,12 @@ app.post('/documents', async (c) => {
   try {
     const { doc, lines } = await c.req.json();
     const docId = doc.id || `doc-${Date.now()}`;
+    const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(doc.client_id).first<any>();
+    const isB2B = client?.type_client === 'professionnel';
+
     const totalAmount = lines.reduce((acc: number, current: any) => acc + current.total_price, 0);
     const totalTtc = totalAmount;
-    const totalHt = doc.total_ht || (totalAmount / 1.20);
+    const totalHt = isB2B ? totalAmount : (totalAmount / 1.20);
 
     // Determine invoice number
     let docNumber = doc.number;
@@ -1234,8 +1237,8 @@ app.post('/admin/documents/renvoyer', async (c) => {
     const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
     const isB2B = client.type_client === 'professionnel';
     const totalTTC = doc.total_amount || 0;
-    const totalHT = doc.total_ht ?? (isB2B ? totalTTC / 1.20 : totalTTC);
-    const tvaAmt = isB2B ? totalTTC - totalHT : 0;
+    const totalHT = isB2B ? totalTTC : (totalTTC / 1.20);
+    const tvaAmt = isB2B ? 0 : (totalTTC - totalHT);
 
     // 4. Build email subject/body
     let subject = emailConfig ? emailConfig.sujet : (doc.type === 'devis' ? `Votre devis de prestation - ${companyName}` : `Votre facture de prestation - ${companyName}`);
@@ -1289,13 +1292,13 @@ app.post('/admin/documents/renvoyer', async (c) => {
     }).join('');
 
     const totalsHtml = isB2B
-      ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Total HT :</span><span>${totalHT.toFixed(2)} €</span></div>
-         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>TVA (20%) :</span><span>${tvaAmt.toFixed(2)} €</span></div>
-         <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;color:#4f46e5;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer TTC :</span><span>${totalTTC.toFixed(2)} €</span></div>`
+      ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Total Global HT :</span><span>${totalHT.toFixed(2)} €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>TVA non applicable :</span><span>0.00 €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;color:#4f46e5;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer :</span><span>${totalHT.toFixed(2)} €</span></div>`
       : `${hasNightLine ? `
          <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Sous-total prestations :</span><span>${baseTotal.toFixed(2)} €</span></div>
          <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:bold;color:#b45309;background:#fef3c7;padding:5px 8px;border-radius:6px;margin:3px 0;"><span>🌙 Majoration nuit :</span><span>+${(nightLine?.total_price || 0).toFixed(2)} €</span></div>` : ''}
-         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>TVA non applicable (art. 293B CGI) :</span><span>0.00 €</span></div>
+         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Part de TVA (20%) incluse :</span><span>${tvaAmt.toFixed(2)} €</span></div>
          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900;color:#0284c7;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer (TTC) :</span><span>${totalTTC.toFixed(2)} €</span></div>`;
 
     const logoHtml = companyConfig?.logo_url
@@ -1371,7 +1374,7 @@ ${doc.notes ? `<div style="background:#f8fafc;padding:12px;border-radius:8px;bor
   <div style="font-weight:700;color:#475569;margin-bottom:3px;">${companyName} — ${companyConfig?.forme_juridique || 'SARL'} au Capital de ${companyConfig?.capital_social || '10 000 €'}</div>
   <div>Siège Social : ${companyConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</div>
   <div style="font-family:monospace;margin-top:2px;">SIRET : ${companyConfig?.siret || '123 456 789 00021'} | Code APE : ${companyConfig?.code_ape || '8121Z'} | TVA : ${companyConfig?.tva_intracommunautaire || 'FR 12 123456789'}</div>
-  <div style="margin-top:5px;font-size:7px;color:#cbd5e1;">Prestations d'injection-extraction et de détachage thermique. TVA non applicable en vertu de l'article 293B du CGI.</div>
+  <div style="margin-top:5px;font-size:7px;color:#cbd5e1;">Prestations d'injection-extraction et de détachage thermique. ${isB2B ? 'TVA non applicable en vertu de l\'article 293B du CGI.' : ''}</div>
 </div>
 </body>
 </html>`;

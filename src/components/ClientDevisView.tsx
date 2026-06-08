@@ -488,6 +488,7 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
 
   // Active document and lines verified
   const activeDoc = document!;
+  const isB2B = client?.type_client === 'professionnel';
   // ✅ CALCUL DYNAMIQUE : applique la majoration si créneau de nuit sélectionné
   const nightPct = corpConfig?.majorat_tarif_nuit_pct !== undefined ? corpConfig.majorat_tarif_nuit_pct : 25;
   const isCurrentSlotNight = selectedSlot ? isNightShiftCrossed(selectedSlot) : false;
@@ -564,18 +565,6 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                     onMouseMove={handleClientSliderMove}
                     onTouchMove={handleClientSliderMove}
                   >
-                    {/* TOP DYNAMIC TEXT BADGE */}
-                    <div className="absolute top-4 left-4 z-30 pointer-events-none">
-                      <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-sm shadow-sm ${
-                        clientSliderPos < 50 
-                          ? 'bg-amber-800/95 text-white'
-                          : 'bg-sky-500/90 text-white'
-                      }`}>
-                        {clientSliderPos < 55 
-                          ? `AVANT ${corpConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}` 
-                          : `APRÈS ${corpConfig?.nom_entreprise?.toUpperCase() || 'SHAMPOOINE LE !'}`}
-                      </span>
-                    </div>
 
                     {/* BACK - Clean State (After) */}
                     <div className="absolute inset-0 w-full h-full">
@@ -703,8 +692,8 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                     <tr className="border-b border-slate-100 text-[10px] text-slate-400 uppercase font-black">
                       <th className="py-3 pr-4">Prestation demandée</th>
                       <th className="py-3 text-center">Quantité</th>
-                      <th className="py-3 text-right">P.U. (TTC)</th>
-                      <th className="py-3 text-right">Total (TTC)</th>
+                      <th className="py-3 text-right">{isB2B ? 'P.U. (HT)' : 'P.U. (TTC)'}</th>
+                      <th className="py-3 text-right">{isB2B ? 'Total (HT)' : 'Total (TTC)'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -763,14 +752,29 @@ export default function ClientDevisView({ onToast, backToHome, entrepriseConfig:
                     </>
                   ) : null;
                 })()}
-                <span className="text-[9px] uppercase font-bold text-slate-400">Total Net à Payer (TTC)</span>
-                <span className="text-xl font-black text-sky-500 font-mono mt-1">
-                  {currentTotal.toFixed(2)} €
-                </span>
+                {isB2B ? (
+                  <>
+                    <span className="text-[9px] uppercase font-bold text-slate-400">Total Net à Payer (HT)</span>
+                    <span className="text-xl font-black text-indigo-600 font-mono mt-1">
+                      {currentTotal.toFixed(2)} €
+                    </span>
+                    <span className="text-[8px] text-indigo-500 uppercase mt-1 font-bold">TVA non applicable, art. 293 B du CGI</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between w-full text-[10px] text-slate-500">
+                      <span>TVA (20%) incluse :</span>
+                      <span className="font-mono">{(currentTotal - (currentTotal / 1.20)).toFixed(2)} €</span>
+                    </div>
+                    <span className="text-[9px] uppercase font-bold text-slate-400">Total Global (TTC)</span>
+                    <span className="text-xl font-black text-sky-500 font-mono mt-1">
+                      {currentTotal.toFixed(2)} €
+                    </span>
+                  </>
+                )}
                 {isCurrentSlotNight && (
                   <span className="text-[9px] text-amber-500 font-bold mt-1 flex items-center gap-1">🌙 Maj. nuit +{nightPct}% incluse</span>
                 )}
-                <span className="text-[8px] text-slate-400 uppercase mt-1 font-bold">TVA non applicable (art. 293B du CGI)</span>
               </div>
             </div>
 
