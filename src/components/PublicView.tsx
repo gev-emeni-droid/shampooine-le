@@ -503,7 +503,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
               {/* BACK - Clean State (After) */}
               <div className="absolute inset-0 w-full h-full">
                 <img 
-                  src="https://raw.githubusercontent.com/huss-dev/shampooine-assets/main/media__1780928603266.png" 
+                  src="https://raw.githubusercontent.com/gev-emeni-droid/shampooine-le/main/C:/Users/huss/.gemini/antigravity/brain/45b45fec-4066-47b5-9ad3-d1f3331f947d/media__1780928603266.png" 
                   alt="Après nettoyage" 
                   className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
@@ -525,7 +525,7 @@ export default function PublicView({ onSwitchToAdmin, onToast, entrepriseConfig:
               >
                 <div className="absolute inset-0 w-full h-full min-w-[32rem]">
                   <img 
-                    src="https://raw.githubusercontent.com/huss-dev/shampooine-assets/main/media__1780928603260.png" 
+                    src="https://raw.githubusercontent.com/gev-emeni-droid/shampooine-le/main/C:/Users/huss/.gemini/antigravity/brain/45b45fec-4066-47b5-9ad3-d1f3331f947d/media__1780928603260.png" 
                     alt="Avant nettoyage" 
                     className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                     style={{ width: '100%', height: '100%' }}
