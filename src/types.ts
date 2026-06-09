@@ -176,6 +176,10 @@ export interface EntrepriseConfig {
   plage_majoration_debut?: string; // e.g. "19:00"
   plage_majoration_fin?: string; // e.g. "06:00"
   activer_majoration?: boolean; // e.g. true
+  admin_username?: string;
+  admin_email_contact?: string;
+  email_notifications?: string;
+  login_username?: string;
 }
 
 

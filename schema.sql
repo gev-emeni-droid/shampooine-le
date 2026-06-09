@@ -160,7 +160,11 @@ CREATE TABLE IF NOT EXISTS planning_employes (
 -- 8. Table des Configurations d'e-mails (flux emails automatiques)
 CREATE TABLE IF NOT EXISTS configurations_emails (
   id TEXT PRIMARY KEY,
-  flux_type TEXT UNIQUE NOT NULL CHECK (flux_type IN ('appointment_confirmation', 'devis_sending', 'facture_sending', 'employee_notification', 'growth_feedback_request', 'booking_invitation', 'employee_welcome')),
+  flux_type TEXT UNIQUE NOT NULL CHECK (flux_type IN (
+    'appointment_confirmation', 'devis_sending', 'facture_sending', 'employee_notification', 
+    'growth_feedback_request', 'booking_invitation', 'employee_welcome',
+    'new_devis_request', 'devis_signed_online', 'appointment_validated_client', 'prestation_completed_employee'
+  )),
   sujet TEXT NOT NULL,
   corps_message TEXT NOT NULL
 );
@@ -227,7 +231,11 @@ INSERT OR REPLACE INTO configurations_emails (id, flux_type, sujet, corps_messag
 ('email_conf_3', 'employee_notification', 'Nouvelle intervention assignée - Shampooine Le', 'Bonjour {PRENOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nAdresse : {ADRESSE_CLIENT}\nPrestations : {PRESTATIONS_DETAIL}\n\nBonne intervention,\nShampooine Le'),
 ('email_conf_4', 'growth_feedback_request', 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le', 'Bonjour {PRENOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s''est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL''équipe Shampooine Le'),
 ('email_conf_6', 'booking_invitation', 'Votre devis est signé ! Choisissez votre créneau d''intervention - Shampooine Le', 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nMerci pour votre signature ! Votre devis {NUMERO_DOCUMENT} est maintenant validé.\nNous vous invitons à choisir la date et l''heure de votre intervention de nettoyage (estimée à {DUREE_ESTIMEE}) via le lien ci-dessous :\n{LIEN_CALENDRIER}\n\nÀ très bientôt,\nL''équipe Shampooine Le'),
-('email_conf_7', 'employee_welcome', 'Bienvenue dans l''équipe de SHAMPOOINE LE ! Vos accès de connexion', 'Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d''accès pour consulter votre planning d''intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL''équipe Shampooine Le');
+('email_conf_7', 'employee_welcome', 'Bienvenue dans l''équipe de SHAMPOOINE LE ! Vos accès de connexion', 'Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d''accès pour consulter votre planning d''intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL''équipe Shampooine Le'),
+('email_conf_8', 'new_devis_request', '🔔 Nouvelle demande de devis reçue sur Shampooine Le !', 'Bonjour,\n\nUne nouvelle demande de devis a été soumise par un client sur le site public.\n\nInformations du Client :\n• Nom complet : {PRENOM_CLIENT} {NOM_CLIENT}\n• Téléphone : {TELEPHONE_CLIENT}\n• Estimation initiale : {TOTAL_ESTIME} €\n\nMerci de vous connecter au Dashboard Admin pour traiter cette demande.\n\nCordialement,\nShampooine Le'),
+('email_conf_9', 'devis_signed_online', '📝 Devis signé en ligne ! - Shampooine Le', 'Bonjour,\n\nLe devis numéro {NUMERO_DOCUMENT} a été signé en ligne par le client.\n\nInformations du Client :\n• Nom complet : {NOM_CLIENT}\n• Montant total : {TOTAL_DOCUMENT} €\n\nVous pouvez visualiser le document signé et le planifier depuis le Dashboard Admin :\n{LIEN_ADMIN_DOCUMENT}\n\nCordialement,\nShampooine Le'),
+('email_conf_10', 'appointment_validated_client', '📅 Rendez-vous réservé en ligne par un client - Shampooine Le', 'Bonjour,\n\nLe client {NOM_CLIENT} a choisi son créneau et validé son intervention.\n\nDétails du Rendez-vous :\n• Date : {DATE_RDV}\n• Heure : {HEURE_RDV}\n• Durée estimée : {DUREE_ESTIMEE} minutes\n\nConsultez le planning d''agenda de la direction pour assigner un ou plusieurs salariés à ce chantier.\n\nCordialement,\nShampooine Le'),
+('email_conf_11', 'prestation_completed_employee', '✅ Chantier clôturé et terminé par le technicien ! - Shampooine Le', 'Bonjour,\n\nUne prestation d''intervention vient d''être clôturée sur le terrain par le technicien.\n\nDétails de l''intervention :\n• Salarié : {NOM_EMPLOYE}\n• Client : {NOM_CLIENT}\n• Montant encaissé/constaté : {MONTANT_CONSTATE} €\n• Mode de paiement choisi : {MODE_PAIEMENT_CHOISI}\n\nMerci de valider et archiver le document de facturation correspondant.\n\nCordialement,\nShampooine Le');
 
 -- Avis clients par défaut
 INSERT OR REPLACE INTO avis_clients (id, client_id, appointment_id, note, commentaire, afficher_nom, approuve) VALUES
@@ -251,7 +259,9 @@ CREATE TABLE IF NOT EXISTS entreprise_config (
   logo_url TEXT,
   admin_username TEXT DEFAULT 'shampooinele.direction',  -- Pseudo de connexion admin
   admin_email_contact TEXT DEFAULT '',                   -- Email de contact/notification artisan
-  admin_password_hash TEXT DEFAULT 'admin123'            -- Mot de passe (stockage local uniquement)
+  admin_password_hash TEXT DEFAULT 'admin123',            -- Mot de passe (stockage local uniquement)
+  email_notifications TEXT DEFAULT 'direction@shampooine-le.fr',
+  login_username TEXT DEFAULT 'shampooinele.direction'
 );
 
 -- Seed configuration par défaut de l'entreprise

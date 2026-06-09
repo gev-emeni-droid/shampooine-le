@@ -187,6 +187,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   // Enterprise & Admin Security Configuration Tab States
   const [adminEmailInput, setAdminEmailInput] = useState('shampooinele.direction');
+  const [adminNotificationEmailInput, setAdminNotificationEmailInput] = useState('direction@shampooine-le.fr');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordConfirmInput, setAdminPasswordConfirmInput] = useState('');
   const [isDraggingLogo, setIsDraggingLogo] = useState(false);
@@ -201,7 +202,9 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     tva_intracommunautaire: 'FR 12 123456789',
     forme_juridique: 'SARL',
     capital_social: '10 000 €',
-    logo_url: 'https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&fit=crop&w=120&h=120&q=80'
+    logo_url: 'https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&fit=crop&w=120&h=120&q=80',
+    email_notifications: 'direction@shampooine-le.fr',
+    login_username: 'shampooinele.direction'
   });
 
   // Surcharge settings states
@@ -217,6 +220,14 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       setSurchargePct(entrepriseConfig.majorat_tarif_nuit_pct !== undefined ? entrepriseConfig.majorat_tarif_nuit_pct : 25);
       setSurchargeStart(entrepriseConfig.plage_majoration_debut || '19:00');
       setSurchargeEnd(entrepriseConfig.plage_majoration_fin || '06:00');
+      setAdminNotificationEmailInput(
+        entrepriseConfig.email_notifications || 
+        entrepriseConfig.admin_email_contact || 
+        'direction@shampooine-le.fr'
+      );
+      if (entrepriseConfig.login_username) {
+        setAdminEmailInput(entrepriseConfig.login_username);
+      }
     }
   }, [entrepriseConfig]);
 
@@ -363,7 +374,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   // Employee Edit States
   const [newEmpModal, setNewEmpModal] = useState(false);
-  const [emailSubTab, setEmailSubTab] = useState<'clients' | 'employees'>('clients');
+  const [emailSubTab, setEmailSubTab] = useState<'clients' | 'employees' | 'company'>('clients');
   const [newEmpForm, setNewEmpForm] = useState({ 
     id: '', 
     first_name: '', 
@@ -530,6 +541,14 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
         return ['{PRENOM_EMPLOYE}', '{NOM_EMPLOYE}', '{IDENT_CONNEXION}', '{PASS_CONNEXION}', '{LIEN_CONNEXION}'];
       case 'employee_notification':
         return ['{PRENOM_EMPLOYE}', '{DATE_RDV}', '{HEURE_RDV}', '{ADRESSE_CLIENT}', '{PRESTATIONS_DETAIL}'];
+      case 'new_devis_request':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{TELEPHONE_CLIENT}', '{TOTAL_ESTIME}'];
+      case 'devis_signed_online':
+        return ['{NUMERO_DOCUMENT}', '{NOM_CLIENT}', '{TOTAL_DOCUMENT}', '{LIEN_ADMIN_DOCUMENT}'];
+      case 'appointment_validated_client':
+        return ['{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{DUREE_ESTIMEE}'];
+      case 'prestation_completed_employee':
+        return ['{NOM_EMPLOYE}', '{NOM_CLIENT}', '{MONTANT_CONSTATE}', '{MODE_PAIEMENT_CHOISI}'];
       default:
         return ['{PRENOM_CLIENT}', '{NOM_CLIENT}'];
     }
@@ -1717,11 +1736,20 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   const handleSaveEntrepriseConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 1. Save company config
-      await apiService.saveEntrepriseConfig(draftConfig);
-      setEntrepriseConfig(draftConfig);
+      // 1. Prepare and save company config
+      const updatedConfig = {
+        ...draftConfig,
+        email_notifications: adminNotificationEmailInput.trim(),
+        login_username: adminEmailInput.trim(),
+        admin_email_contact: adminNotificationEmailInput.trim(),
+        admin_username: adminEmailInput.trim()
+      };
+
+      await apiService.saveEntrepriseConfig(updatedConfig);
+      setEntrepriseConfig(updatedConfig);
+      setDraftConfig(updatedConfig);
       if (onUpdateEntrepriseConfig) {
-        onUpdateEntrepriseConfig(draftConfig);
+        onUpdateEntrepriseConfig(updatedConfig);
       }
       
       // 2. Save admin credentials if email is updated or password filled
@@ -4010,6 +4038,21 @@ export default {
                     >
                       💼 Mails Employés
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailSubTab('company');
+                        const firstComp = emailConfigs.find(c => ['new_devis_request', 'devis_signed_online', 'appointment_validated_client', 'prestation_completed_employee'].includes(c.flux_type));
+                        if (firstComp) setEditingConfig(firstComp);
+                      }}
+                      className={`flex-1 text-center py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        emailSubTab === 'company'
+                          ? 'bg-sky-500 text-white shadow-md shadow-sky-500/10'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      }`}
+                    >
+                      🔔 Mails Entreprise
+                    </button>
                   </div>
 
                   <div className="space-y-2.5 flex flex-col">
@@ -4017,8 +4060,10 @@ export default {
                       .filter(config => {
                         if (emailSubTab === 'clients') {
                           return ['devis_sending', 'booking_invitation', 'appointment_confirmation', 'facture_sending', 'growth_feedback_request'].includes(config.flux_type);
-                        } else {
+                        } else if (emailSubTab === 'employees') {
                           return ['employee_welcome', 'employee_notification'].includes(config.flux_type);
+                        } else {
+                          return ['new_devis_request', 'devis_signed_online', 'appointment_validated_client', 'prestation_completed_employee'].includes(config.flux_type);
                         }
                       })
                       .map((config) => {
@@ -4045,6 +4090,18 @@ export default {
                             break;
                           case 'employee_notification':
                             flowLabel = "2. Assignation de Chantier";
+                            break;
+                          case 'new_devis_request':
+                            flowLabel = "1. Alerte Nouvelle Demande Devis";
+                            break;
+                          case 'devis_signed_online':
+                            flowLabel = "2. Alerte Devis Signé";
+                            break;
+                          case 'appointment_validated_client':
+                            flowLabel = "3. Alerte Créneau Validé par Client";
+                            break;
+                          case 'prestation_completed_employee':
+                            flowLabel = "4. Alerte Prestation Clôturée";
                             break;
                           default:
                             flowLabel = config.flux_type;
@@ -4093,6 +4150,12 @@ export default {
                             case '{LIEN_CONNEXION}': desc = "Lien bouton vers l'Espace Employé"; break;
                             case '{ADRESSE_CLIENT}': desc = "Adresse de l'intervention"; break;
                             case '{PRESTATIONS_DETAIL}': desc = "Prestations à réaliser"; break;
+                            case '{TELEPHONE_CLIENT}': desc = "Téléphone du client"; break;
+                            case '{TOTAL_ESTIME}': desc = "Estimation de la surface ou dimensions"; break;
+                            case '{TOTAL_DOCUMENT}': desc = "Montant total du document"; break;
+                            case '{LIEN_ADMIN_DOCUMENT}': desc = "Lien bouton vers l'administration"; break;
+                            case '{MONTANT_CONSTATE}': desc = "Montant final encaissé ou constaté"; break;
+                            case '{MODE_PAIEMENT_CHOISI}': desc = "Mode de paiement choisi"; break;
                             default: desc = "Variable dynamique";
                           }
                           return (
@@ -4750,7 +4813,20 @@ export default {
 
                     <div className="space-y-4">
                       <div className="space-y-1">
-                        <label className="text-[9px] uppercase font-bold text-slate-400 block">Adresse e-mail de connexion *</label>
+                        <label className="text-[9px] uppercase font-bold text-slate-400 block">Adresse e-mail de notification *</label>
+                        <input 
+                          type="email"
+                          required
+                          value={adminNotificationEmailInput}
+                          onChange={e => setAdminNotificationEmailInput(e.target.value)}
+                          placeholder="direction@shampooine-le.fr"
+                          className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-sky-500 font-mono font-medium text-slate-800"
+                        />
+                        <p className="text-[8px] text-slate-400 italic">Les alertes de devis signés, fins de prestations et avis clients seront envoyées à cette adresse.</p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] uppercase font-bold text-slate-400 block">Identifiant de connexion Admin (Login) *</label>
                         <input 
                           type="text"
                           required
@@ -4759,7 +4835,7 @@ export default {
                           placeholder="shampooinele.direction"
                           className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none focus:bg-white focus:ring-1 focus:ring-sky-500 font-mono font-medium text-slate-800"
                         />
-                        <p className="text-[8px] text-slate-400 italic">Par défaut, l'application utilise l'identifiant "shampooinele.direction". Vous pouvez le modifier ci-dessus.</p>
+                        <p className="text-[8px] text-slate-400 italic">Sert à vous connecter à l'espace administration.</p>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">

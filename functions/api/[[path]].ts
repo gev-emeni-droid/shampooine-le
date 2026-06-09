@@ -310,6 +310,22 @@ app.post('/demandes-devis', async (c) => {
         body.demande_visite ? 1 : 0
       )
       .run();
+
+    // DÉCLENCHER ALERTE NOUVEAU DEVIS
+    try {
+      const client = await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(body.client_id).first<any>();
+      if (client) {
+        await sendCompanyNotification(c, 'new_devis_request', {
+          PRENOM_CLIENT: client.first_name || '',
+          NOM_CLIENT: client.last_name || '',
+          TELEPHONE_CLIENT: client.phone || '',
+          TOTAL_ESTIME: body.surface_dimensions || 'À définir'
+        });
+      }
+    } catch (alertErr: any) {
+      console.error('[New Devis Alert Error]:', alertErr.message);
+    }
+
     return c.json({ id, ...body });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -835,6 +851,19 @@ app.post('/documents/:devisId/sign', async (c) => {
       } else {
         console.log(`[Resend Auto-Email Simulation] Devis signé. Client email sent to ${client.email}. Link: ${schedulerLink}`);
       }
+      // DÉCLENCHER ALERTE DEVIS SIGNÉ EN LIGNE
+      try {
+        const reqOrigin = new URL(c.req.url).origin;
+        const adminDocLink = `${reqOrigin}/?view=documents`;
+        await sendCompanyNotification(c, 'devis_signed_online', {
+          NUMERO_DOCUMENT: fresh.number || fresh.id,
+          NOM_CLIENT: `${client.first_name} ${client.last_name}`,
+          TOTAL_DOCUMENT: `${(fresh.total_amount || 0).toFixed(2)}`,
+          LIEN_ADMIN_DOCUMENT: `<a href="${adminDocLink}" style="display: inline-block; background-color: #0f172a; color: white; padding: 10px 20px; border-radius: 8px; font-weight: bold; text-decoration: none;">📝 Voir dans l'Espace Direction</a>`
+        });
+      } catch (alertErr: any) {
+        console.error('[Sign Devis Alert Error]:', alertErr.message);
+      }
     }
 
     return c.json(fresh);
@@ -1066,7 +1095,10 @@ app.post('/appointments', async (c) => {
     const body = await c.req.json();
     const id = body.id || `rv-${Date.now()}`;
 
-    // Récupérer les anciennes liaisons d'employés
+    // Récupérer l'ancien statut et les anciennes liaisons d'employés
+    const oldAppt = await c.env.DB.prepare('SELECT status FROM planning WHERE id = ?').bind(id).first<any>();
+    const oldStatus = oldAppt ? oldAppt.status : null;
+
     const oldAssignments = await c.env.DB.prepare('SELECT employe_id FROM planning_employes WHERE planning_id = ?').bind(id).all<any>();
     const oldEmpIds = oldAssignments.results ? oldAssignments.results.map((r: any) => r.employe_id) : [];
 
@@ -1184,6 +1216,50 @@ app.post('/appointments', async (c) => {
         }
       } catch (innerErr: any) {
         console.error('[Employee Notification Process Error]:', innerErr);
+      }
+    }
+
+    // DÉCLENCHER LES ALERTES DIRECTION / ARTISAN
+    // Alerte 1: Rendez-vous Validé par le Client
+    if (body.source_creation === 'client_auto') {
+      try {
+        const doc = await c.env.DB.prepare('SELECT client_id FROM documents WHERE id = ?').bind(body.devis_facture_id).first<any>();
+        const client = doc ? await c.env.DB.prepare('SELECT first_name, last_name FROM clients WHERE id = ?').bind(doc.client_id).first<any>() : null;
+        const clientName = client ? `${client.first_name} ${client.last_name}` : 'Client Inconnu';
+        
+        await sendCompanyNotification(c, 'appointment_validated_client', {
+          NOM_CLIENT: clientName,
+          DATE_RDV: body.date,
+          HEURE_RDV: body.start_time,
+          DUREE_ESTIMEE: String(body.duration_minutes || 120)
+        });
+      } catch (alertErr: any) {
+        console.error('[Appt Booking Alert Error]:', alertErr.message);
+      }
+    }
+
+    // Alerte 2: Prestation Terminée par le Salarié
+    if (oldStatus !== 'Terminé' && body.status === 'Terminé') {
+      try {
+        const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(body.devis_facture_id).first<any>();
+        const client = doc ? await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(doc.client_id).first<any>() : null;
+        const clientName = client ? `${client.first_name} ${client.last_name}` : 'Client Inconnu';
+        
+        const { results: apptEmps } = await c.env.DB.prepare(
+          'SELECT first_name, last_name FROM employes WHERE id IN (SELECT employe_id FROM planning_employes WHERE planning_id = ?)'
+        ).bind(id).all<any>();
+        const empNames = apptEmps && apptEmps.length > 0 
+          ? apptEmps.map((e: any) => `${e.first_name} ${e.last_name}`).join(', ') 
+          : 'Aucun salarié assigné';
+
+        await sendCompanyNotification(c, 'prestation_completed_employee', {
+          NOM_EMPLOYE: empNames,
+          NOM_CLIENT: clientName,
+          MONTANT_CONSTATE: `${(body.final_price || 0).toFixed(2)}`,
+          MODE_PAIEMENT_CHOISI: doc?.moyen_paiement || 'À définir'
+        });
+      } catch (alertErr: any) {
+        console.error('[Completed Prestation Alert Error]:', alertErr.message);
       }
     }
 
@@ -1337,7 +1413,9 @@ app.get('/entreprise-config', async (c) => {
         plage_majoration_fin: '06:00',
         activer_majoration: true,
         admin_username: 'shampooinele.direction',
-        admin_email_contact: ''
+        admin_email_contact: '',
+        email_notifications: 'direction@shampooine-le.fr',
+        login_username: 'shampooinele.direction'
       });
     }
 
@@ -1348,7 +1426,9 @@ app.get('/entreprise-config', async (c) => {
       plage_majoration_fin: config.plage_majoration_fin || '06:00',
       activer_majoration: config.activer_majoration !== undefined ? (config.activer_majoration ? true : false) : true,
       admin_username: config.admin_username || 'shampooinele.direction',
-      admin_email_contact: config.admin_email_contact || ''
+      admin_email_contact: config.admin_email_contact || '',
+      email_notifications: config.email_notifications || config.admin_email_contact || 'direction@shampooine-le.fr',
+      login_username: config.login_username || config.admin_username || 'shampooinele.direction'
     });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -1362,8 +1442,9 @@ app.put('/admin/entreprise-config', async (c) => {
       `INSERT OR REPLACE INTO entreprise_config (
         id, nom_entreprise, telephone, adresse_siege, horaires, siret, code_ape, 
         tva_intracommunautaire, forme_juridique, capital_social, logo_url,
-        admin_username, admin_email_contact, admin_password_hash
-      ) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        admin_username, admin_email_contact, admin_password_hash,
+        email_notifications, login_username
+      ) VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         body.nom_entreprise,
@@ -1378,7 +1459,9 @@ app.put('/admin/entreprise-config', async (c) => {
         body.logo_url,
         body.admin_username || 'shampooinele.direction',
         body.admin_email_contact || '',
-        body.admin_password_hash || 'admin123'
+        body.admin_password_hash || 'admin123',
+        body.email_notifications || 'direction@shampooine-le.fr',
+        body.login_username || 'shampooinele.direction'
       )
       .run();
     return c.json(body);
@@ -1456,6 +1539,96 @@ app.delete('/photos/:id', async (c) => {
 // ==========================================
 // EMAIL CONFIG & SENDING
 // ==========================================
+
+async function sendCompanyNotification(
+  c: any, 
+  fluxType: 'new_devis_request' | 'devis_signed_online' | 'appointment_validated_client' | 'prestation_completed_employee', 
+  replacements: Record<string, string>
+) {
+  try {
+    const resendApiKey = c.env.RESEND_API_KEY;
+    const companyConfig = await c.env.DB.prepare('SELECT * FROM entreprise_config WHERE id = "default"').first<any>();
+    const emailToNotify = companyConfig?.email_notifications || companyConfig?.admin_email_contact || 'direction@shampooine-le.fr';
+    const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
+
+    // Charger le template
+    const template = await c.env.DB.prepare(
+      'SELECT * FROM configurations_emails WHERE flux_type = ?'
+    ).bind(fluxType).first<any>();
+
+    let subject = `Notification interne - ${fluxType}`;
+    let body = `Alerte système.`;
+
+    if (template) {
+      subject = template.sujet;
+      body = template.corps_message;
+    } else {
+      // Fallback par défaut si non trouvé
+      switch(fluxType) {
+        case 'new_devis_request':
+          subject = `🔔 Nouvelle demande de devis reçue sur Shampooine Le !`;
+          body = `Bonjour,\n\nUne nouvelle demande de devis a été soumise par un client sur le site public.\n\nInformations du Client :\n• Nom complet : {PRENOM_CLIENT} {NOM_CLIENT}\n• Téléphone : {TELEPHONE_CLIENT}\n• Estimation initiale : {TOTAL_ESTIME} €\n\nMerci de vous connecter au Dashboard Admin pour traiter cette demande.\n\nCordialement,\nShampooine Le`;
+          break;
+        case 'devis_signed_online':
+          subject = `📝 Devis signé en ligne ! - Shampooine Le`;
+          body = `Bonjour,\n\nLe devis numéro {NUMERO_DOCUMENT} a été signé en ligne par le client.\n\nInformations du Client :\n• Nom complet : {NOM_CLIENT}\n• Montant total : {TOTAL_DOCUMENT} €\n\nVous pouvez visualiser le document signé et le planifier depuis le Dashboard Admin :\n{LIEN_ADMIN_DOCUMENT}\n\nCordialement,\nShampooine Le`;
+          break;
+        case 'appointment_validated_client':
+          subject = `📅 Rendez-vous réservé en ligne par un client - Shampooine Le`;
+          body = `Bonjour,\n\nLe client {NOM_CLIENT} a choisi son créneau et validé son intervention.\n\nDétails du Rendez-vous :\n• Date : {DATE_RDV}\n• Heure : {HEURE_RDV}\n• Durée estimée : {DUREE_ESTIMEE} minutes\n\nConsultez le planning d''agenda de la direction pour assigner un ou plusieurs salariés à ce chantier.\n\nCordialement,\nShampooine Le`;
+          break;
+        case 'prestation_completed_employee':
+          subject = `✅ Chantier clôturé et terminé par le technicien ! - Shampooine Le`;
+          body = `Bonjour,\n\nUne prestation d''intervention vient d''être clôturée sur le terrain par le technicien.\n\nDétails de l''intervention :\n• Salarié : {NOM_EMPLOYE}\n• Client : {NOM_CLIENT}\n• Montant encaissé/constaté : {MONTANT_CONSTATE} €\n• Mode de paiement choisi : {MODE_PAIEMENT_CHOISI}\n\nMerci de valider et archiver le document de facturation correspondant.\n\nCordialement,\nShampooine Le`;
+          break;
+      }
+    }
+
+    // Effectuer les substitutions
+    Object.entries(replacements).forEach(([key, val]) => {
+      const tag = `{${key}}`;
+      subject = subject.replace(new RegExp(tag, 'g'), String(val));
+      body = body.replace(new RegExp(tag, 'g'), String(val));
+    });
+
+    const from = `${companyName} <notifications@l-iamani.com>`;
+    const htmlBody = `
+      <div style="font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f1f5f9; border-radius: 24px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);">
+        <div style="background: linear-gradient(135deg, #0f172a, #334155); padding: 20px 24px; border-radius: 16px; margin-bottom: 24px; text-align: center;">
+          <h2 style="color: white; font-weight: 800; margin: 0; font-size: 16px;">${subject}</h2>
+        </div>
+        <div style="white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: #334155; margin-bottom: 24px;">
+          ${body.replace(/\n/g, '<br/>')}
+        </div>
+        <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+        <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+          Alerte interne de gestion commerciale et technique.
+        </p>
+      </div>
+    `;
+
+    if (resendApiKey) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from,
+          to: [emailToNotify],
+          subject,
+          html: htmlBody
+        })
+      });
+      console.log(`[Company Notification] Internal email sent to ${emailToNotify} for ${fluxType}`);
+    } else {
+      console.log(`[Company Notification Simulation] Internal email to ${emailToNotify} for ${fluxType}. Subject: ${subject}`);
+    }
+  } catch (err: any) {
+    console.error(`[Company Notification Error]:`, err.message);
+  }
+}
 
 app.get('/emails/config', async (c) => {
   try {
