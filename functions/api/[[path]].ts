@@ -9,6 +9,11 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
 
+app.use('*', async (c, next) => {
+  await next();
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+});
+
 // Helper to generate IDs if missing
 const uuid = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
