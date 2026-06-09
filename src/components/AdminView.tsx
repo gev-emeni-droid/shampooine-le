@@ -638,6 +638,15 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     loadAllDbData();
   }, []);
 
+  useEffect(() => {
+    if (emailConfigs.length > 0 && !editingConfig) {
+      const firstClient = emailConfigs.find(c => ['devis_sending', 'booking_invitation', 'appointment_confirmation', 'facture_sending', 'growth_feedback_request'].includes(c.flux_type));
+      if (firstClient) {
+        setEditingConfig(firstClient);
+      }
+    }
+  }, [emailConfigs, editingConfig]);
+
   // Load dynamic planning appointments when calendar date or tab changes
   useEffect(() => {
     async function loadPlanningEvents() {
