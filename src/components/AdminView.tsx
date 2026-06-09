@@ -57,7 +57,7 @@ import {
 } from 'lucide-react';
 import { EntrepriseConfig } from '../types';
 
-const DEFAULT_TEMPLATES = [
+const DEFAULT_TEMPLATES: any[] = [
   {
     id: 'email_conf_1',
     flux_type: 'devis_sending',
@@ -180,7 +180,13 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   const [documents, setDocuments] = useState<DevisFacture[]>([]);
   const [employees, setEmployees] = useState<Employe[]>([]);
   const [appointments, setAppointments] = useState<RendezVousPlanning[]>([]);
-  const [emailConfigs, setEmailConfigs] = useState<EmailConfiguration[]>([]);
+  const [emailConfigs, setEmailConfigs] = useState<EmailConfiguration[]>(
+    DEFAULT_TEMPLATES.map(def => ({
+      ...def,
+      sujet: def.sujet_template,
+      corps_message: def.corps_template
+    }))
+  );
   const [clientReviews, setClientReviews] = useState<AvisClient[]>([]);
   
   // Selected configuration for email editor
