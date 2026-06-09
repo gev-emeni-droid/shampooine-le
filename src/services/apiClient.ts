@@ -681,6 +681,7 @@ export const apiService = {
       username: employee.username,
       password_hash: employee.password_hash,
       compte_actif: employee.compte_actif,
+      poste: employee.poste,
       created_at: new Date().toISOString()
     };
 

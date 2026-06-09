@@ -102,6 +102,7 @@ export interface Employe {
   username?: string;
   password_hash?: string;
   compte_actif?: boolean;
+  poste?: string;
 }
 
 export type AppointmentStatus = 'Planifié' | 'En cours' | 'Terminé' | 'Annulé';

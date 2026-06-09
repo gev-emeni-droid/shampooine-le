@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS employes (
   username TEXT UNIQUE,
   password_hash TEXT,
   compte_actif INTEGER DEFAULT 0 CHECK (compte_actif IN (0,1)),
+  poste TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

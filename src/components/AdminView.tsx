@@ -373,7 +373,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     color: '#0ea5e9',
     compte_actif: false,
     username: '',
-    password_hash: ''
+    password_hash: '',
+    poste: ''
   });
 
   // Appointment Planner States
@@ -1583,8 +1584,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       await apiService.saveEmployee(updatedEmp);
       onToast(`Employé enregistré !`, "success");
 
-      // TRIGGERS AUTOmated email (Resend Simulation) if account is active
-      if (newEmpForm.compte_actif) {
+      // TRIGGERS AUTOmated email (Resend Simulation) if account is active (only for existing employees, creation is handled by backend)
+      if (newEmpForm.compte_actif && newEmpForm.id) {
         const replacementParams = {
           NOM_EMPLOYE: `${newEmpForm.first_name} ${newEmpForm.last_name}`,
           IDENT_CONNEXION: u_name || buildUsername(newEmpForm.first_name, newEmpForm.last_name),
@@ -1613,7 +1614,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
         color: '#0ea5e9',
         compte_actif: false,
         username: '',
-        password_hash: ''
+        password_hash: '',
+        poste: ''
       });
       loadAllDbData();
     } catch (err) {
@@ -3724,7 +3726,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                       color: '#0ea5e9',
                       compte_actif: false,
                       username: '',
-                      password_hash: ''
+                      password_hash: '',
+                      poste: ''
                     });
                     setNewEmpModal(true);
                   }}
@@ -3751,7 +3754,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                             </div>
                             <div>
                               <h4 className="font-bold text-slate-900 text-sm">{emp.first_name} {emp.last_name}</h4>
-                              <p className="text-[10px] text-slate-400">Technicien Extracteur HP</p>
+                              <p className="text-[10px] text-slate-400">{emp.poste || 'Technicien Extracteur HP'}</p>
                               <div className="mt-1">
                                 {emp.compte_actif ? (
                                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-sky-100 text-sky-800 border border-sky-100">
@@ -3804,7 +3807,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                 color: emp.color,
                                 compte_actif: emp.compte_actif || false,
                                 username: emp.username || '',
-                                password_hash: emp.password_hash || ''
+                                password_hash: emp.password_hash || '',
+                                poste: emp.poste || ''
                               });
                               setNewEmpModal(true);
                             }}
@@ -6746,6 +6750,18 @@ export default {
                   required
                   value={newEmpForm.phone}
                   onChange={e => setNewEmpForm({ ...newEmpForm, phone: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Poste *</span>
+                <input 
+                  type="text"
+                  required
+                  placeholder="Ex: Technicien nettoyage, Apprenti..."
+                  value={(newEmpForm as any).poste || ''}
+                  onChange={e => setNewEmpForm({ ...newEmpForm, poste: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-100 text-xs p-2.5 rounded-xl outline-none"
                 />
               </div>

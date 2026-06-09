@@ -859,10 +859,38 @@ app.get('/employees', async (c) => {
 app.post('/employees', async (c) => {
   try {
     const body = await c.req.json();
+    const isCreation = !body.id;
     const id = body.id || `emp-${Date.now()}`;
+    
+    let passwordHash = body.password_hash || null;
+    let username = body.username || null;
+    
+    const wantsActivation = body.compte_actif === true || body.compte_actif === 1 || body.compte_actif === 'true' || body.activation_compte === true || body.activation_compte === 'true';
+    
+    let tempPassword = '';
+    let emailSent = false;
+    let emailError = null;
+
+    if (isCreation && wantsActivation) {
+      // Générer un mot de passe temporaire de 10 caractères
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      for (let i = 0; i < 10; i++) {
+        tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      passwordHash = tempPassword;
+
+      // Générer l'username automatique s'il n'est pas fourni
+      if (!username) {
+        const firstLetter = body.first_name?.[0] ? body.first_name[0].toLowerCase() : '';
+        const lastNamePart = body.last_name ? body.last_name.trim().toLowerCase().replace(/\s+/g, '').normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
+        username = `${firstLetter}.${lastNamePart}`;
+      }
+    }
+
+    // Insérer ou remplacer l'employé avec le champ 'poste'
     await c.env.DB.prepare(
-      `INSERT OR REPLACE INTO employes (id, first_name, last_name, email, phone, status, color, username, password_hash, compte_actif) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT OR REPLACE INTO employes (id, first_name, last_name, email, phone, status, color, username, password_hash, compte_actif, poste) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         id,
@@ -872,13 +900,98 @@ app.post('/employees', async (c) => {
         body.phone,
         body.status || 'Actif',
         body.color || '#3b82f6',
-        body.username || null,
-        body.password_hash || null,
-        body.compte_actif !== undefined ? (body.compte_actif ? 1 : 0) : 0
+        username,
+        passwordHash,
+        wantsActivation ? 1 : 0,
+        body.poste || null
       )
       .run();
+
+    // Envoi de l'e-mail via Resend si création et activation active
+    if (isCreation && wantsActivation && body.email) {
+      const resendApiKey = c.env.RESEND_API_KEY;
+      const urlObj = new URL(c.req.url);
+      const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+      const loginLink = `${baseUrl}/?view=login`;
+
+      const from = `SHAMPOOINE LE <notifications@l-iamani.com>`;
+      const subject = `Bienvenue dans l'équipe de SHAMPOOINE LE ! Vos accès de connexion`;
+      
+      const htmlBody = `
+        <div style="font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f1f5f9; border-radius: 24px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);">
+          <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 24px; border-radius: 20px; text-align: center; margin-bottom: 32px;">
+            <h1 style="color: #ffffff; font-weight: 800; margin: 0; font-size: 22px; letter-spacing: -0.025em;">Bienvenue dans l'équipe de SHAMPOOINE LE !</h1>
+            <p style="color: #e0f2fe; margin: 8px 0 0 0; font-size: 14px;">Votre espace salarié est désormais actif</p>
+          </div>
+          
+          <div style="line-height: 1.8; font-size: 14px; color: #334155; margin-bottom: 24px;">
+            <p style="margin: 0 0 16px 0; font-weight: 600; font-size: 16px; color: #0f172a;">Bonjour ${body.first_name || ''},</p>
+            <p style="margin: 0 0 24px 0;">Nous sommes ravis de vous compter parmi nous ! Votre compte d'accès pour consulter votre planning d'intervention et gérer vos chantiers a été créé avec succès.</p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin-bottom: 28px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Vos identifiants de connexion :</h3>
+              <p style="margin: 0 0 8px 0; font-size: 14px;"><strong style="color: #475569;">E-mail (Identifiant) :</strong> <code style="background-color: #e2e8f0; color: #0284c7; padding: 2px 6px; border-radius: 6px; font-family: monospace; font-size: 13px;">${body.email}</code></p>
+              <p style="margin: 0; font-size: 14px;"><strong style="color: #475569;">Mot de passe temporaire :</strong> <code style="background-color: #e2e8f0; color: #16a34a; padding: 2px 6px; border-radius: 6px; font-family: monospace; font-size: 13px;">${tempPassword}</code></p>
+            </div>
+            
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${loginLink}" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #ffffff; padding: 14px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(14, 165, 233, 0.3); transition: all 0.2s;">📱 Accéder à mon Espace Employé</a>
+            </div>
+            
+            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 8px; font-size: 12px; color: #b45309; margin-top: 24px;">
+              <strong>🔒 Consigne de sécurité :</strong> Pour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion à votre espace de travail.
+            </div>
+          </div>
+          
+          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 32px 0;" />
+          <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0; line-height: 1.5;">
+            Cet e-mail automatique a été envoyé pour le compte de SHAMPOOINE LE.<br/>
+            Si vous n'êtes pas à l'origine de cette demande, merci de contacter votre administrateur.
+          </p>
+        </div>
+      `;
+
+      if (resendApiKey) {
+        try {
+          const res = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from,
+              to: [body.email],
+              subject,
+              html: htmlBody
+            })
+          });
+          const mailData = await res.json() as any;
+          if (res.ok) {
+            console.log(`[Resend Auto-Access] Welcome email sent to ${body.email}. ID: ${mailData.id}`);
+            emailSent = true;
+          } else {
+            console.error(`[Resend Auto-Access Error]:`, JSON.stringify(mailData));
+            emailError = mailData;
+          }
+        } catch (mailErr: any) {
+          console.error(`[Resend Auto-Access Exception]:`, mailErr.message);
+          emailError = mailErr.message;
+        }
+      } else {
+        console.log(`[Resend Auto-Access Simulation] Welcome email simulated to ${body.email}`);
+        console.log(`Temporary Password: ${tempPassword}`);
+        console.log(`Login Link: ${loginLink}`);
+        emailSent = true;
+      }
+    }
+
     const fresh = await c.env.DB.prepare('SELECT * FROM employes WHERE id = ?').bind(id).first();
-    return c.json(fresh);
+    return c.json({
+      ...fresh,
+      emailSent,
+      emailError
+    });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }
