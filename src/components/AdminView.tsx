@@ -363,6 +363,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   // Employee Edit States
   const [newEmpModal, setNewEmpModal] = useState(false);
+  const [emailSubTab, setEmailSubTab] = useState<'clients' | 'employees'>('clients');
   const [newEmpForm, setNewEmpForm] = useState({ 
     id: '', 
     first_name: '', 
@@ -515,17 +516,22 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   const getAvailableVariables = (fluxType: string): string[] => {
     switch (fluxType) {
-      case 'appointment_confirmation':
-        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{DUREE_ESTIMEE}', '{NOM_ENTREPRISE}'];
       case 'devis_sending':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{NUMERO_DOCUMENT}', '{LIEN_SIGNATURE}'];
+      case 'booking_invitation':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DUREE_ESTIMEE}', '{LIEN_CALENDRIER}'];
+      case 'appointment_confirmation':
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{DUREE_ESTIMEE}'];
       case 'facture_sending':
-        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{TYPE_DOCUMENT}', '{NUMERO_DOCUMENT}', '{TOTAL_DOCUMENT}', '{LIEN_DOCUMENT}', '{NOM_ENTREPRISE}'];
-      case 'employee_notification':
-        return ['{NOM_EMPLOYE}', '{IDENT_CONNEXION}', '{PASS_CONNEXION}', '{LIEN_CONNEXION}', '{PRENOM_CLIENT}', '{NOM_CLIENT}', '{DATE_RDV}', '{HEURE_RDV}', '{NOM_ENTREPRISE}'];
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{MONTANT_TOTAL}', '{MODE_PAIEMENT}', '{RESTE_A_PAYER}'];
       case 'growth_feedback_request':
-        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{LIEN_AVIS}', '{NOM_ENTREPRISE}'];
+        return ['{PRENOM_CLIENT}', '{LIEN_AVIS}'];
+      case 'employee_welcome':
+        return ['{PRENOM_EMPLOYE}', '{NOM_EMPLOYE}', '{IDENT_CONNEXION}', '{PASS_CONNEXION}', '{LIEN_CONNEXION}'];
+      case 'employee_notification':
+        return ['{PRENOM_EMPLOYE}', '{DATE_RDV}', '{HEURE_RDV}', '{ADRESSE_CLIENT}', '{PRESTATIONS_DETAIL}'];
       default:
-        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}', '{NOM_ENTREPRISE}'];
+        return ['{PRENOM_CLIENT}', '{NOM_CLIENT}'];
     }
   };
 
@@ -3970,61 +3976,132 @@ export default {
                 
                 {/* Left: Email Flow list */}
                 <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-4 lg:col-span-1">
-                  <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Flux transactionnels d'e-mails</h4>
-                  <div className="space-y-2.5 flex flex-col">
-                    {emailConfigs.map((config) => {
-                      const isSelected = editingConfig?.id === config.id;
-                      let flowLabel = "";
-                      switch (config.flux_type) {
-                        case 'appointment_confirmation':
-                          flowLabel = "1. Confirmation de Rendez-vous";
-                          break;
-                        case 'devis_sending':
-                          flowLabel = "2. Envoi de Devis";
-                          break;
-                        case 'facture_sending':
-                          flowLabel = "2b. Envoi de Facture";
-                          break;
-                        case 'employee_notification':
-                          flowLabel = "3. Assignation & Rappel Employé";
-                          break;
-                        case 'growth_feedback_request':
-                          flowLabel = "4. Enquête d'Avis (Fin de Prestation)";
-                          break;
-                        default:
-                          flowLabel = config.flux_type;
-                      }
+                  <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Flux d'e-mails</h4>
+                  
+                  {/* Category tabs */}
+                  <div className="flex border-b border-slate-100 pb-2 mb-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailSubTab('clients');
+                        const firstClient = emailConfigs.find(c => ['devis_sending', 'booking_invitation', 'appointment_confirmation', 'facture_sending', 'growth_feedback_request'].includes(c.flux_type));
+                        if (firstClient) setEditingConfig(firstClient);
+                      }}
+                      className={`flex-1 text-center py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        emailSubTab === 'clients'
+                          ? 'bg-sky-500 text-white shadow-md shadow-sky-500/10'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      }`}
+                    >
+                      👤 Mails Clients
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmailSubTab('employees');
+                        const firstEmp = emailConfigs.find(c => ['employee_welcome', 'employee_notification'].includes(c.flux_type));
+                        if (firstEmp) setEditingConfig(firstEmp);
+                      }}
+                      className={`flex-1 text-center py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        emailSubTab === 'employees'
+                          ? 'bg-sky-500 text-white shadow-md shadow-sky-500/10'
+                          : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                      }`}
+                    >
+                      💼 Mails Employés
+                    </button>
+                  </div>
 
-                      return (
-                        <button
-                          key={config.id}
-                          onClick={() => setEditingConfig(config)}
-                          className={`w-full text-left p-3.5 rounded-2xl transition-all border flex flex-col space-y-1 cursor-pointer ${
-                            isSelected 
-                              ? 'bg-sky-50 border-sky-200 text-sky-950' 
-                              : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                          }`}
-                        >
-                          <span className="text-xs font-bold">{flowLabel}</span>
-                          <span className="text-[10px] text-slate-400 truncate max-w-full">Sujet : {config.sujet_template}</span>
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-2.5 flex flex-col">
+                    {emailConfigs
+                      .filter(config => {
+                        if (emailSubTab === 'clients') {
+                          return ['devis_sending', 'booking_invitation', 'appointment_confirmation', 'facture_sending', 'growth_feedback_request'].includes(config.flux_type);
+                        } else {
+                          return ['employee_welcome', 'employee_notification'].includes(config.flux_type);
+                        }
+                      })
+                      .map((config) => {
+                        const isSelected = editingConfig?.id === config.id;
+                        let flowLabel = "";
+                        switch (config.flux_type) {
+                          case 'devis_sending':
+                            flowLabel = "1. Envoi de Devis";
+                            break;
+                          case 'booking_invitation':
+                            flowLabel = "2. Invitation Prise de RDV (Après Signature)";
+                            break;
+                          case 'appointment_confirmation':
+                            flowLabel = "3. Confirmation de Rendez-vous";
+                            break;
+                          case 'facture_sending':
+                            flowLabel = "4. Fin de Prestation & Facture";
+                            break;
+                          case 'growth_feedback_request':
+                            flowLabel = "5. Enquête d'Avis (Fin de Prestation)";
+                            break;
+                          case 'employee_welcome':
+                            flowLabel = "1. Création de Compte & Identifiants";
+                            break;
+                          case 'employee_notification':
+                            flowLabel = "2. Assignation de Chantier";
+                            break;
+                          default:
+                            flowLabel = config.flux_type;
+                        }
+
+                        return (
+                          <button
+                            key={config.id}
+                            onClick={() => setEditingConfig(config)}
+                            className={`w-full text-left p-3.5 rounded-2xl transition-all border flex flex-col space-y-1 cursor-pointer ${
+                              isSelected 
+                                ? 'bg-sky-50 border-sky-200 text-sky-950' 
+                                : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                            }`}
+                          >
+                            <span className="text-xs font-bold">{flowLabel}</span>
+                            <span className="text-[10px] text-slate-400 truncate max-w-full">Sujet : {config.sujet_template}</span>
+                          </button>
+                        );
+                      })}
                   </div>
 
                   <div className="pt-4 border-t border-gray-100 space-y-2 text-[11px] text-slate-400">
                     <p className="font-bold text-slate-700">Tags de variables exploitables :</p>
                     <ul className="space-y-1 bg-slate-50 p-3 rounded-xl border border-gray-100 font-mono text-[9px]">
-                      <li><strong className="text-sky-600">{`{PRENOM_CLIENT}`}</strong> : Prénom</li>
-                      <li><strong className="text-sky-600">{`{NOM_CLIENT}`}</strong> : Nom de famille</li>
-                      <li><strong className="text-sky-600">{`{DATE_RDV}`}</strong> : Date d'intervention</li>
-                      <li><strong className="text-sky-600">{`{HEURE_RDV}`}</strong> : Heure de début</li>
-                      <li><strong className="text-sky-600">{`{DUREE_ESTIMEE}`}</strong> : Durée</li>
-                      <li><strong className="text-sky-600">{`{NOM_EMPLOYE}`}</strong> : Équipe assignée / Nom employé</li>
-                      <li><strong className="text-sky-600">{`{IDENT_CONNEXION}`}</strong> : Identifiant employé</li>
-                      <li><strong className="text-sky-600">{`{PASS_CONNEXION}`}</strong> : Mot de passe employé</li>
-                      <li><strong className="text-sky-600">{`{LIEN_CONNEXION}`}</strong> : Lien de connexion employé</li>
-                      <li><strong className="text-sky-600">{`{LIEN_AVIS}`}</strong> : Lien d'avis clients</li>
+                      {editingConfig ? (
+                        getAvailableVariables(editingConfig.flux_type).map(v => {
+                          let desc = "";
+                          switch(v) {
+                            case '{PRENOM_CLIENT}': desc = "Prénom du client"; break;
+                            case '{NOM_CLIENT}': desc = "Nom du client"; break;
+                            case '{NUMERO_DOCUMENT}': desc = "Numéro du document (devis/facture)"; break;
+                            case '{LIEN_SIGNATURE}': desc = "Lien unique de signature"; break;
+                            case '{DUREE_ESTIMEE}': desc = "Durée estimée de l'intervention"; break;
+                            case '{LIEN_CALENDRIER}': desc = "Lien du calendrier de réservation"; break;
+                            case '{DATE_RDV}': desc = "Date du rendez-vous (YYYY-MM-DD)"; break;
+                            case '{HEURE_RDV}': desc = "Heure de début du rendez-vous"; break;
+                            case '{MONTANT_TOTAL}': desc = "Montant total TTC"; break;
+                            case '{MODE_PAIEMENT}': desc = "Moyen de paiement (ESPECES/VIREMENT)"; break;
+                            case '{RESTE_A_PAYER}': desc = "Reste à payer"; break;
+                            case '{LIEN_AVIS}': desc = "Lien unique pour laisser un avis"; break;
+                            case '{PRENOM_EMPLOYE}': desc = "Prénom du salarié"; break;
+                            case '{NOM_EMPLOYE}': desc = "Nom du salarié"; break;
+                            case '{IDENT_CONNEXION}': desc = "Identifiant de connexion"; break;
+                            case '{PASS_CONNEXION}': desc = "Mot de passe temporaire"; break;
+                            case '{LIEN_CONNEXION}': desc = "Lien bouton vers l'Espace Employé"; break;
+                            case '{ADRESSE_CLIENT}': desc = "Adresse de l'intervention"; break;
+                            case '{PRESTATIONS_DETAIL}': desc = "Prestations à réaliser"; break;
+                            default: desc = "Variable dynamique";
+                          }
+                          return (
+                            <li key={v}><strong className="text-sky-600">{v}</strong> : {desc}</li>
+                          );
+                        })
+                      ) : (
+                        <li>Sélectionnez un modèle pour voir ses variables</li>
+                      )}
                     </ul>
                   </div>
                 </div>

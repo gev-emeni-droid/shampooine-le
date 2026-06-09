@@ -914,33 +914,44 @@ app.post('/employees', async (c) => {
       const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
       const loginLink = `${baseUrl}/?view=login`;
 
+      let subject = `Bienvenue dans l'équipe de SHAMPOOINE LE ! Vos accès de connexion`;
+      let corpsMessage = `Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d'accès pour consulter votre planning d'intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL'équipe Shampooine Le`;
+
+      // Charger le template depuis la BDD si existant
+      const config = await c.env.DB.prepare(
+        'SELECT * FROM configurations_emails WHERE flux_type = "employee_welcome"'
+      ).first<any>();
+
+      if (config) {
+        subject = config.sujet;
+        corpsMessage = config.corps_message;
+      }
+
+      // Remplacer les variables dynamiques
+      const replacements: Record<string, string> = {
+        PRENOM_EMPLOYE: body.first_name || '',
+        NOM_EMPLOYE: body.last_name || '',
+        IDENT_CONNEXION: body.email || '',
+        PASS_CONNEXION: tempPassword,
+        LIEN_CONNEXION: `<a href="${loginLink}" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #ffffff; padding: 12px 24px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px; margin: 16px 0;">📱 Accéder à mon Espace Employé</a>`
+      };
+
+      Object.entries(replacements).forEach(([key, val]) => {
+        const tag = `{${key}}`;
+        subject = subject.replace(new RegExp(tag, 'g'), String(val));
+        corpsMessage = corpsMessage.replace(new RegExp(tag, 'g'), String(val));
+      });
+
       const from = `SHAMPOOINE LE <notifications@l-iamani.com>`;
-      const subject = `Bienvenue dans l'équipe de SHAMPOOINE LE ! Vos accès de connexion`;
       
       const htmlBody = `
         <div style="font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 32px 24px; border: 1px solid #f1f5f9; border-radius: 24px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);">
           <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 24px; border-radius: 20px; text-align: center; margin-bottom: 32px;">
-            <h1 style="color: #ffffff; font-weight: 800; margin: 0; font-size: 22px; letter-spacing: -0.025em;">Bienvenue dans l'équipe de SHAMPOOINE LE !</h1>
-            <p style="color: #e0f2fe; margin: 8px 0 0 0; font-size: 14px;">Votre espace salarié est désormais actif</p>
+            <h1 style="color: #ffffff; font-weight: 800; margin: 0; font-size: 22px; letter-spacing: -0.025em;">${subject}</h1>
           </div>
           
-          <div style="line-height: 1.8; font-size: 14px; color: #334155; margin-bottom: 24px;">
-            <p style="margin: 0 0 16px 0; font-weight: 600; font-size: 16px; color: #0f172a;">Bonjour ${body.first_name || ''},</p>
-            <p style="margin: 0 0 24px 0;">Nous sommes ravis de vous compter parmi nous ! Votre compte d'accès pour consulter votre planning d'intervention et gérer vos chantiers a été créé avec succès.</p>
-            
-            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin-bottom: 28px;">
-              <h3 style="margin: 0 0 12px 0; font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em;">Vos identifiants de connexion :</h3>
-              <p style="margin: 0 0 8px 0; font-size: 14px;"><strong style="color: #475569;">E-mail (Identifiant) :</strong> <code style="background-color: #e2e8f0; color: #0284c7; padding: 2px 6px; border-radius: 6px; font-family: monospace; font-size: 13px;">${body.email}</code></p>
-              <p style="margin: 0; font-size: 14px;"><strong style="color: #475569;">Mot de passe temporaire :</strong> <code style="background-color: #e2e8f0; color: #16a34a; padding: 2px 6px; border-radius: 6px; font-family: monospace; font-size: 13px;">${tempPassword}</code></p>
-            </div>
-            
-            <div style="text-align: center; margin: 32px 0;">
-              <a href="${loginLink}" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #ffffff; padding: 14px 28px; border-radius: 12px; font-weight: 700; text-decoration: none; font-size: 14px; box-shadow: 0 10px 15px -3px rgba(14, 165, 233, 0.3); transition: all 0.2s;">📱 Accéder à mon Espace Employé</a>
-            </div>
-            
-            <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 8px; font-size: 12px; color: #b45309; margin-top: 24px;">
-              <strong>🔒 Consigne de sécurité :</strong> Pour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion à votre espace de travail.
-            </div>
+          <div style="white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: #334155; margin-bottom: 24px;">
+            ${corpsMessage.replace(/\n/g, '<br/>')}
           </div>
           
           <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 32px 0;" />
@@ -1461,7 +1472,7 @@ app.get('/emails/config', async (c) => {
           id: 'email_conf_2',
           flux_type: 'devis_sending',
           sujet: 'Votre devis de prestation - Shampooine Le',
-          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe Shampooine Le'
+          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre devis concernant nos services de nettoyage de textile.\n\nPour le signer en ligne : {LIEN_SIGNATURE}\n\nCordialement,\nL\'équipe Shampooine Le'
         },
         {
           id: 'email_conf_5',
@@ -1473,13 +1484,25 @@ app.get('/emails/config', async (c) => {
           id: 'email_conf_3',
           flux_type: 'employee_notification',
           sujet: 'Nouvelle intervention assignée - Shampooine Le',
-          corps_message: 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\nShampooine Le'
+          corps_message: 'Bonjour {PRENOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nAdresse : {ADRESSE_CLIENT}\nPrestations : {PRESTATIONS_DETAIL}\n\nBonne intervention,\nShampooine Le'
         },
         {
           id: 'email_conf_4',
           flux_type: 'growth_feedback_request',
           sujet: 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le',
-          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s\'est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL\'équipe Shampooine Le'
+          corps_message: 'Bonjour {PRENOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s\'est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL\'équipe Shampooine Le'
+        },
+        {
+          id: 'email_conf_6',
+          flux_type: 'booking_invitation',
+          sujet: 'Votre devis est signé ! Choisissez votre créneau d\'intervention - Shampooine Le',
+          corps_message: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nMerci pour votre signature ! Votre devis {NUMERO_DOCUMENT} est maintenant validé.\nNous vous invitons à choisir la date et l\'heure de votre intervention de nettoyage (estimée à {DUREE_ESTIMEE}) via le lien ci-dessous :\n{LIEN_CALENDRIER}\n\nÀ très bientôt,\nL\'équipe Shampooine Le'
+        },
+        {
+          id: 'email_conf_7',
+          flux_type: 'employee_welcome',
+          sujet: 'Bienvenue dans l\'équipe de SHAMPOOINE LE ! Vos accès de connexion',
+          corps_message: 'Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d\'accès pour consulter votre planning d'intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL\'équipe Shampooine Le'
         }
       ];
 
