@@ -182,6 +182,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [docInterventionAddress, setDocInterventionAddress] = useState('');
   const [apptInterventionAddress, setApptInterventionAddress] = useState('');
+  const [selectedClientPhotos, setSelectedClientPhotos] = useState<DocumentPhoto[]>([]);
 
   // Enterprise & Admin Security Configuration Tab States
   const [adminEmailInput, setAdminEmailInput] = useState('shampooinele.direction');
@@ -703,6 +704,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   const handleSelectClient = async (client: Client) => {
     setSelectedClient(client);
+    setSelectedClientPhotos([]);
     try {
       const fullClient = await apiService.getClientById(client.id);
       if (fullClient) {
@@ -712,6 +714,18 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
             const filtered = prev.filter(d => d.client_id !== client.id);
             return [...filtered, ...fullClient.documents!];
           });
+
+          // Fetch photos for each document of this client
+          const allPhotos: DocumentPhoto[] = [];
+          for (const doc of fullClient.documents) {
+            try {
+              const docPhotos = await apiService.getDocumentPhotos(doc.id);
+              allPhotos.push(...docPhotos);
+            } catch (err) {
+              console.error(`Failed to load photos for doc ${doc.id}`, err);
+            }
+          }
+          setSelectedClientPhotos(allPhotos);
         }
       }
     } catch (err) {
@@ -727,8 +741,8 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       await apiService.updateClient(editClientForm);
       onToast(`Client ${editClientForm.first_name} ${editClientForm.last_name} mis à jour.`, "success");
       setEditClientModal(false);
-      // Synchroniser le client sélectionné
-      setSelectedClient(editClientForm);
+      // Synchroniser le client sélectionné avec ses documents et ses photos
+      await handleSelectClient(editClientForm);
       loadAllDbData();
     } catch (err) {
       console.error(err);
@@ -1298,11 +1312,17 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   // View Document Details
   const handleViewDoc = async (doc: DevisFacture) => {
     try {
-      const lines = await apiService.getLignesDocument(doc.id);
-      const photos = await apiService.getDocumentPhotos(doc.id);
-      setViewingLines(lines);
-      setViewingPhotos(photos);
       setViewingDoc(doc);
+      setViewingLines([]);
+      setViewingPhotos([]);
+      const lines = await apiService.getLignesDocument(doc.id);
+      setViewingLines(lines);
+      try {
+        const photos = await apiService.getDocumentPhotos(doc.id);
+        setViewingPhotos(photos);
+      } catch (photoErr) {
+        console.error("Failed to load photos for preview", photoErr);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -1328,6 +1348,11 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       setNewPhotoUrl('');
       setNewPhotoCaption('');
       onToast("Fichier joint ou photo de chantier ajouté !", "success");
+
+      // Update selected client photos if this document belongs to them
+      if (selectedClient && viewingDoc.client_id === selectedClient.id) {
+        setSelectedClientPhotos(prev => [...prev, added]);
+      }
     } catch (err) {
       console.error(err);
       onToast("Erreur lors de l'ajout.", "info");
@@ -1340,6 +1365,9 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       await apiService.deleteDocumentPhoto(id);
       setViewingPhotos(viewingPhotos.filter(p => p.id !== id));
       onToast("Fichier joint supprimé.", "success");
+
+      // Update selected client photos
+      setSelectedClientPhotos(prev => prev.filter(p => p.id !== id));
     } catch (err) {
       console.error(err);
     }
@@ -2819,7 +2847,12 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                                     <span className="text-[10px] text-slate-500 font-medium">{doc.status}</span>
                                   </div>
                                   <button 
-                                    onClick={() => { handleViewDoc(doc); setIsDocModalOpen(true); }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      handleViewDoc(doc);
+                                      setIsDocModalOpen(true);
+                                    }}
                                     className="p-1 text-slate-400 hover:text-slate-900 cursor-pointer"
                                   >
                                     <Eye className="w-4 h-4" />
@@ -2836,27 +2869,43 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                         <h3 className="text-sm font-bold text-slate-900">Photos de chantier associées (Canapés &amp; Moquettes)</h3>
                         
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                          {/* We will showcase elegant before/after canvas illustrations */}
-                          <div className="relative group overflow-hidden rounded-2xl bg-[#fef3c7] h-32 flex flex-col justify-end p-3 border border-amber-200">
-                            <span className="absolute top-2 left-2 text-[8px] bg-amber-950 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">AVANT</span>
-                            <div className="space-y-0.5">
-                              <p className="text-[10px] font-bold text-amber-900 leading-none">Canapé Laetitia</p>
-                              <p className="text-[8px] text-amber-700">Taches d'eau &amp; café</p>
-                            </div>
-                          </div>
-
-                          <div className="relative group overflow-hidden rounded-2xl bg-[#e0f2fe] h-32 flex flex-col justify-end p-3 border border-sky-200">
-                            <span className="absolute top-2 left-2 text-[8px] bg-sky-950 text-white font-extrabold px-1.5 py-0.5 rounded uppercase">APRÈS</span>
-                            <div className="space-y-0.5">
-                              <p className="text-[10px] font-bold text-sky-900 leading-none">Canapé Laetitia</p>
-                              <p className="text-[8px] text-sky-700">Shampooing complet</p>
-                            </div>
-                          </div>
-
-                          <div className="border-2 border-dashed border-gray-200 hover:border-sky-300 rounded-2xl h-32 flex flex-col items-center justify-center p-3 text-center text-slate-400 transition-colors">
-                            <Plus className="w-6 h-6 text-slate-300" />
-                            <span className="text-[10px] font-medium mt-1">Glisser une photo</span>
-                          </div>
+                          {selectedClientPhotos.length === 0 ? (
+                            <p className="text-xs text-slate-450 italic py-4 col-span-full text-center">
+                              Aucune photo de chantier pour le moment. Les photos apparaîtront dès qu'elles auront été ajoutées par le salarié après la prestation.
+                            </p>
+                          ) : (
+                            selectedClientPhotos.map((photo) => (
+                              <div key={photo.id} className="relative group overflow-hidden rounded-2xl bg-slate-100 h-32 flex flex-col justify-end p-3 border border-slate-200 shadow-sm transition-transform hover:scale-[1.02]">
+                                <img 
+                                  src={photo.photo_url} 
+                                  alt={photo.caption} 
+                                  className="absolute inset-0 w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent"></div>
+                                <span className={`absolute top-2 left-2 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase ${
+                                  photo.before_after === 'before' ? 'bg-amber-500 text-white' : 
+                                  photo.before_after === 'after' ? 'bg-sky-500 text-white' : 'bg-slate-500 text-white'
+                                }`}>
+                                  {photo.before_after === 'before' ? 'AVANT' : 
+                                   photo.before_after === 'after' ? 'APRÈS' : 'INFO'}
+                                </span>
+                                <div className="relative space-y-0.5 z-10">
+                                  <p className="text-[10px] font-bold text-white leading-none truncate" title={photo.caption}>
+                                    {photo.caption}
+                                  </p>
+                                  {(() => {
+                                    const doc = documents.find(d => d.id === photo.devis_facture_id);
+                                    return doc ? (
+                                      <p className="text-[8px] text-slate-300 font-medium">
+                                        {doc.number} ({doc.type.toUpperCase()})
+                                      </p>
+                                    ) : null;
+                                  })()}
+                                </div>
+                              </div>
+                            ))
+                          )}
                         </div>
                       </div>
 
