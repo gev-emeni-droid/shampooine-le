@@ -37,9 +37,10 @@ export default function App() {
   // Check custom route parameters on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('client_id') || window.location.search.includes('review') || window.location.pathname.includes('laisser-un-avis')) {
+    const path = window.location.pathname;
+    if (params.get('client_id') || window.location.search.includes('review') || path.includes('laisser-un-avis') || path.includes('review')) {
       setView('review');
-    } else if (params.get('devis_id') || params.get('id')) {
+    } else if (params.get('devis_id') || params.get('id') || params.get('devis') || path.includes('signature-devis') || path.includes('choix-rdv')) {
       setView('client_devis');
     }
   }, []);

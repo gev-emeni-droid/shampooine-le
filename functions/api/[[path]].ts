@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { handle } from 'hono/cloudflare-pages';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 type Bindings = {
   DB: D1Database;
@@ -10,6 +11,191 @@ const app = new Hono<{ Bindings: Bindings }>().basePath('/api');
 
 // Helper to generate IDs if missing
 const uuid = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+function stripAccents(str: string): string {
+  if (!str) return '';
+  return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+async function generateInvoicePDF(doc: any, client: any, lines: any[], companyConfig: any) {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.275, 841.89]);
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const { width, height } = page.getSize();
+  
+  let y = 800;
+
+  // 1. Logo
+  let logoEmbedded = false;
+  if (companyConfig?.logo_url) {
+    try {
+      const resp = await fetch(companyConfig.logo_url);
+      if (resp.ok) {
+        const logoBytes = await resp.arrayBuffer();
+        let logoImg;
+        if (companyConfig.logo_url.toLowerCase().endsWith('.png')) {
+          logoImg = await pdfDoc.embedPng(logoBytes);
+        } else {
+          logoImg = await pdfDoc.embedJpg(logoBytes);
+        }
+        if (logoImg) {
+          const imgWidth = 80;
+          const imgHeight = (logoImg.height / logoImg.width) * imgWidth;
+          page.drawImage(logoImg, {
+            x: 40,
+            y: y - imgHeight,
+            width: imgWidth,
+            height: imgHeight
+          });
+          logoEmbedded = true;
+          y -= (imgHeight + 10);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to embed logo, fallback to text", e);
+    }
+  }
+
+  if (!logoEmbedded) {
+    page.drawRectangle({
+      x: 40,
+      y: y - 30,
+      width: 40,
+      height: 30,
+      color: rgb(0.05, 0.65, 0.91)
+    });
+    page.drawText('+', {
+      x: 54,
+      y: y - 22,
+      size: 18,
+      font: fontBold,
+      color: rgb(1, 1, 1)
+    });
+    y -= 40;
+  }
+
+  const startY = y + 30;
+
+  // Company coordinates
+  y = startY - 50;
+  page.drawText(stripAccents(companyConfig?.nom_entreprise || 'Shampooine Le'), { x: 40, y, size: 12, font: fontBold });
+  y -= 14;
+  page.drawText('Prestige canapes & tapis', { x: 40, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+  y -= 12;
+  page.drawText(stripAccents(companyConfig?.adresse_siege || 'Paris, France'), { x: 40, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+  y -= 12;
+  page.drawText(companyConfig?.telephone || '', { x: 40, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+
+  // Document details right
+  let docY = startY - 10;
+  const isDevis = doc.type === 'devis';
+  const typeLabel = isDevis ? 'DEVIS' : 'FACTURE';
+  page.drawText(`${typeLabel} #${doc.number}`, { x: 380, y: docY, size: 14, font: fontBold, color: isDevis ? rgb(0.52, 0.3, 0.06) : rgb(0.02, 0.37, 0.27) });
+  docY -= 16;
+  page.drawText(`Emis le : ${doc.date}`, { x: 380, y: docY, size: 9, font: fontRegular });
+  docY -= 12;
+  page.drawText(`Echeance : ${doc.due_date}`, { x: 380, y: docY, size: 9, font: fontRegular, color: rgb(0.7, 0.2, 0.2) });
+
+  // 2. Destinataire
+  y = Math.min(y, docY) - 30;
+  page.drawRectangle({
+    x: 350,
+    y: y - 75,
+    width: 205,
+    height: 85,
+    color: rgb(0.97, 0.98, 0.99),
+    borderColor: rgb(0.9, 0.92, 0.94),
+    borderWidth: 1
+  });
+  
+  let destY = y - 12;
+  page.drawText('Destinataire :', { x: 360, y: destY, size: 8, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
+  destY -= 14;
+  page.drawText(`${stripAccents(client.last_name || '').toUpperCase()} ${stripAccents(client.first_name || '')}`, { x: 360, y: destY, size: 10, font: fontBold });
+  destY -= 12;
+  page.drawText(client.email || '', { x: 360, y: destY, size: 9, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+  destY -= 12;
+  page.drawText(client.phone || '', { x: 360, y: destY, size: 9, font: fontRegular, color: rgb(0.3, 0.3, 0.3) });
+
+  if (client.type_client === 'professionnel') {
+    destY -= 12;
+    page.drawText(`SIRET: ${client.siret || ''}`, { x: 360, y: destY, size: 8, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+  }
+
+  y = y - 90;
+
+  // 3. Prestations Table
+  page.drawText('Designation de la prestation', { x: 40, y, size: 9, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
+  page.drawText('Qte', { x: 340, y, size: 9, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
+  page.drawText('Prix Unit.', { x: 400, y, size: 9, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
+  page.drawText('Total', { x: 500, y, size: 9, font: fontBold, color: rgb(0.5, 0.5, 0.5) });
+  
+  y -= 6;
+  page.drawLine({
+    start: { x: 40, y },
+    end: { x: 555, y },
+    thickness: 1,
+    color: rgb(0.9, 0.9, 0.9)
+  });
+  
+  y -= 18;
+
+  const isB2B = client.type_client === 'professionnel';
+  const totalTTC = doc.total_amount || 0;
+  const totalHT = isB2B ? totalTTC : (totalTTC / 1.20);
+  const tvaAmt = isB2B ? 0 : (totalTTC - totalHT);
+
+  for (const line of lines) {
+    const isNightLine = line.prestation_name.includes('[MAJ. NUIT') || line.prestation_name.startsWith('Majoration Horaires de Nuit');
+    const cleanName = line.prestation_name.replace(/ \[MAJ\. NUIT.*?\]/g, '');
+    
+    page.drawText(stripAccents(cleanName), { x: 40, y, size: 9, font: isNightLine ? fontBold : fontRegular });
+    page.drawText(String(line.quantity), { x: 340, y, size: 9, font: fontRegular });
+    page.drawText(`${line.unit_price.toFixed(2)} e`, { x: 400, y, size: 9, font: fontRegular });
+    page.drawText(`${line.total_price.toFixed(2)} e`, { x: 500, y, size: 9, font: fontBold });
+
+    if (isNightLine) {
+      page.drawText('  Tarif horaire de nuit applique', { x: 40, y: y - 9, size: 7, font: fontBold, color: rgb(0.7, 0.4, 0.1) });
+      y -= 10;
+    }
+    
+    y -= 16;
+  }
+
+  y -= 10;
+  page.drawLine({
+    start: { x: 40, y },
+    end: { x: 555, y },
+    thickness: 1,
+    color: rgb(0.9, 0.9, 0.9)
+  });
+  
+  y -= 20;
+
+  // 4. Totals
+  if (isB2B) {
+    page.drawText(`Total Global HT : ${totalHT.toFixed(2)} e`, { x: 380, y, size: 10, font: fontBold });
+    y -= 14;
+    page.drawText('TVA non applicable : 0.00 e', { x: 380, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+    y -= 16;
+    page.drawText(`Total Net a payer : ${totalHT.toFixed(2)} e`, { x: 380, y, size: 12, font: fontBold, color: rgb(0.31, 0.27, 0.9) });
+    y -= 14;
+    page.drawText('TVA non applicable, art. 293 B du CGI', { x: 380, y, size: 8, font: fontBold, color: rgb(0.31, 0.27, 0.9) });
+  } else {
+    page.drawText(`TVA (20%) incluse : ${tvaAmt.toFixed(2)} e`, { x: 380, y, size: 9, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
+    y -= 14;
+    page.drawText(`Total Global (TTC) : ${totalTTC.toFixed(2)} e`, { x: 380, y, size: 12, font: fontBold, color: rgb(0.01, 0.52, 0.78) });
+  }
+
+  // 5. Footer Mentions
+  page.drawText(`${stripAccents(companyConfig?.nom_entreprise || 'Shampooine Le')} - ${stripAccents(companyConfig?.forme_juridique || 'SARL')} au Capital de ${stripAccents(companyConfig?.capital_social || '10 000 e')}`, { x: width / 2 - 150, y: 50, size: 8, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
+  page.drawText(`Siege Social : ${stripAccents(companyConfig?.adresse_siege || '')}`, { x: width / 2 - 150, y: 38, size: 7, font: fontRegular, color: rgb(0.5, 0.5, 0.5) });
+  page.drawText(`SIRET : ${companyConfig?.siret || ''} | Code APE : ${companyConfig?.code_ape || ''} | TVA : ${companyConfig?.tva_intracommunautaire || ''}`, { x: width / 2 - 150, y: 26, size: 7, font: fontRegular, color: rgb(0.5, 0.5, 0.5) });
+
+  const pdfBytes = await pdfDoc.save();
+  return pdfBytes;
+}
 
 // ==========================================
 // PRESTATIONS / SERVICES
@@ -515,6 +701,15 @@ app.post('/documents/:devisId/sign', async (c) => {
     const { signature_client } = await c.req.json();
     const dateSignature = new Date().toISOString();
 
+    // Vérifier d'abord le statut actuel du devis
+    const currentDoc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(devisId).first<any>();
+    if (!currentDoc) {
+      return c.json({ error: 'Document non trouvé' }, 404);
+    }
+    if (currentDoc.status === 'Signé' || currentDoc.status === 'Signé/Accepté' || currentDoc.status === 'Facturé' || currentDoc.status === 'Payé') {
+      return c.json({ error: 'Ce devis a déjà été signé' }, 400);
+    }
+
     // 1. Update quote status and signature
     await c.env.DB.prepare(
       'UPDATE documents SET status = "Signé", signature_client = ?, date_signature = ? WHERE id = ?'
@@ -543,9 +738,46 @@ app.post('/documents/:devisId/sign', async (c) => {
         ? config.corps_message 
         : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre devis a bien été accepté et signé.\n\nVeuillez planifier votre rendez-vous en ligne via le lien ci-dessous :\n{LIEN_UNIQUE}\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}';
 
+      // Calcul dynamique de la durée estimée des prestations
+      const [ { results: lines }, { results: prestations } ] = await Promise.all([
+        c.env.DB.prepare('SELECT * FROM lignes_documents WHERE document_id = ?').bind(devisId).all<any>(),
+        c.env.DB.prepare('SELECT * FROM prestations').all<any>()
+      ]);
+
+      let totalMinutes = 0;
+      for (const line of lines) {
+        const lineName = line.prestation_name.replace(/ \[MAJ\. NUIT.*?\]/g, '').trim().toLowerCase();
+        const matchedPrestation = prestations.find(p => p.name.trim().toLowerCase() === lineName);
+        const matchedDuration = matchedPrestation ? matchedPrestation.temps_estime_minutes : 60; // 60 mins par défaut
+        totalMinutes += matchedDuration * line.quantity;
+      }
+
+      const hours = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      let durationStr = '';
+      if (hours > 0) {
+        durationStr = `${hours}h${mins > 0 ? String(mins).padStart(2, '0') : '00'}`;
+      } else {
+        durationStr = `${mins} min`;
+      }
+
+      const phraseDuree = `Votre prestation va nécessiter environ ${durationStr} de travail.`;
+      
+      // Injection de la phrase de durée
+      if (body.includes('{DUREE_TRAVAIL}')) {
+        body = body.replace(/{DUREE_TRAVAIL}/g, durationStr);
+      } else if (!body.includes(phraseDuree)) {
+        const helloMatch = body.match(/Bonjour.*?,?\n\n/i);
+        if (helloMatch) {
+          body = body.replace(helloMatch[0], `${helloMatch[0]}${phraseDuree}\n\n`);
+        } else {
+          body = `${phraseDuree}\n\n${body}`;
+        }
+      }
+
       // 4. Inject dynamic parameters
       const reqOrigin = new URL(c.req.url).origin;
-      const schedulerLink = `${reqOrigin}/prendre-rendez-vous?devis=${fresh.id}`;
+      const schedulerLink = `${reqOrigin}/choix-rdv?devis=${fresh.id}`;
 
       const replacements: Record<string, string> = {
         PRENOM_CLIENT: client.first_name || '',
@@ -705,11 +937,14 @@ app.get('/appointments', async (c) => {
     return c.json({ error: e.message }, 500);
   }
 });
-
 app.post('/appointments', async (c) => {
   try {
     const body = await c.req.json();
     const id = body.id || `rv-${Date.now()}`;
+
+    // Récupérer les anciennes liaisons d'employés
+    const oldAssignments = await c.env.DB.prepare('SELECT employe_id FROM planning_employes WHERE planning_id = ?').bind(id).all<any>();
+    const oldEmpIds = oldAssignments.results ? oldAssignments.results.map((r: any) => r.employe_id) : [];
 
     await c.env.DB.prepare(
       `INSERT OR REPLACE INTO planning (id, document_id, title, date, start_time, duration_minutes, final_price, status, notes, source_creation) 
@@ -732,8 +967,9 @@ app.post('/appointments', async (c) => {
     // Recreate employee assignments
     await c.env.DB.prepare('DELETE FROM planning_employes WHERE planning_id = ?').bind(id).run();
 
-    if (body.assigned_employee_ids && Array.isArray(body.assigned_employee_ids)) {
-      const batchStmts = body.assigned_employee_ids.map((empId: string) => {
+    const newEmpIds = body.assigned_employee_ids || [];
+    if (Array.isArray(newEmpIds)) {
+      const batchStmts = newEmpIds.map((empId: string) => {
         return c.env.DB.prepare(
           'INSERT INTO planning_employes (planning_id, employe_id) VALUES (?, ?)'
         ).bind(id, empId);
@@ -745,7 +981,88 @@ app.post('/appointments', async (c) => {
 
     const appt = await c.env.DB.prepare('SELECT * FROM planning WHERE id = ?').bind(id).first<any>();
     const freshAssignments = await c.env.DB.prepare('SELECT employe_id FROM planning_employes WHERE planning_id = ?').bind(id).all<any>();
-    
+    const freshEmpIds = freshAssignments.results ? freshAssignments.results.map((r: any) => r.employe_id) : [];
+
+    // Notifier les employés nouvellement assignés
+    const newlyAssigned = freshEmpIds.filter((empId: string) => !oldEmpIds.includes(empId));
+    if (newlyAssigned.length > 0) {
+      try {
+        const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(appt.document_id).first<any>();
+        const client = doc ? await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(doc.client_id).first<any>() : null;
+        
+        const emailConfig = await c.env.DB.prepare('SELECT * FROM configurations_emails WHERE flux_type = "employee_notification"').first<any>();
+        const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
+        const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
+
+        for (const empId of newlyAssigned) {
+          const emp = await c.env.DB.prepare('SELECT * FROM employes WHERE id = ?').bind(empId).first<any>();
+          if (emp && emp.email) {
+            let subject = emailConfig ? emailConfig.sujet : `Nouvelle intervention assignee - ${companyName}`;
+            let bodyText = emailConfig 
+              ? emailConfig.corps_message 
+              : 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a ete assignee le {DATE_RDV} a {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\n{NOM_ENTREPRISE}';
+              
+            const replacements: Record<string, string> = {
+              NOM_EMPLOYE: `${emp.first_name} ${emp.last_name}`,
+              DATE_RDV: appt.date,
+              HEURE_RDV: appt.start_time,
+              PRENOM_CLIENT: client ? client.first_name : '',
+              NOM_CLIENT: client ? client.last_name : '',
+              NOM_ENTREPRISE: companyName
+            };
+            
+            Object.entries(replacements).forEach(([key, val]) => {
+              const tag = `{${key}}`;
+              subject = subject.replace(new RegExp(tag, 'g'), val);
+              bodyText = bodyText.replace(new RegExp(tag, 'g'), val);
+            });
+            
+            const resendApiKey = c.env.RESEND_API_KEY;
+            const from = `${companyName} <notifications@l-iamani.com>`;
+            
+            if (resendApiKey) {
+              const htmlBody = `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px;">
+                  <div style="background: linear-gradient(135deg, #0ea5e9, #6366f1); padding: 20px 24px; border-radius: 12px; margin-bottom: 24px;">
+                    <h2 style="color: white; font-weight: 800; margin: 0; font-size: 18px;">${companyName}</h2>
+                  </div>
+                  <div style="white-space: pre-wrap; line-height: 1.7; font-size: 14px; color: #374151;">
+                    ${bodyText.replace(/\n/g, '<br/>')}
+                  </div>
+                  <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+                  <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+                    Cet email a ete envoye automatiquement depuis votre espace ${companyName}.
+                  </p>
+                </div>
+              `;
+              try {
+                await fetch('https://api.resend.com/emails', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${resendApiKey}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    from,
+                    to: [emp.email],
+                    subject,
+                    html: htmlBody
+                  })
+                });
+                console.log(`[Resend Auto-Email] Employee assigned notification email sent to ${emp.email}`);
+              } catch (mailErr) {
+                console.error('[Resend Auto-Email] Error:', mailErr);
+              }
+            } else {
+              console.log(`[Resend Auto-Email Simulation] Employee assigned notification. Employee email sent to ${emp.email}`);
+            }
+          }
+        }
+      } catch (innerErr: any) {
+        console.error('[Employee Notification Process Error]:', innerErr);
+      }
+    }
+
     return c.json({
       id: appt.id,
       devis_facture_id: appt.document_id,
@@ -757,7 +1074,7 @@ app.post('/appointments', async (c) => {
       status: appt.status,
       notes: appt.notes,
       source_creation: appt.source_creation || 'admin',
-      assigned_employee_ids: freshAssignments.results.map((r: any) => r.employe_id)
+      assigned_employee_ids: freshEmpIds
     });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -1249,7 +1566,7 @@ app.post('/admin/documents/renvoyer', async (c) => {
         : 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVeuillez trouver ci-joint votre facture concernant nos services de nettoyage de textile.\n\nCordialement,\nL\'équipe {NOM_ENTREPRISE}');
 
     const reqOrigin = origin || new URL(c.req.url).origin;
-    const documentLink = `${reqOrigin}/?devis_id=${doc.id}`;
+    const documentLink = `${reqOrigin}/signature-devis?id=${doc.id}`;
 
     const replacements: Record<string, string> = {
       PRENOM_CLIENT: client.first_name || '',
@@ -1269,125 +1586,23 @@ app.post('/admin/documents/renvoyer', async (c) => {
       body = body.replace(new RegExp(tag, 'g'), val);
     });
 
-    // 5. ✅ GÉNÉRATION DU HTML DU DOCUMENT (pièce jointe PDF)
+    // 5. ✅ GÉNÉRATION DU VRAI PDF DU DOCUMENT (pièce jointe PDF)
     const docTypeLabel = doc.type === 'devis' ? 'DEVIS' : 'FACTURE';
-    const docColor = doc.type === 'devis' ? '#854d0e' : '#065f46';
-    const docBg = doc.type === 'devis' ? '#fef9c3' : '#d1fae5';
-
-    // Détection majoration nuit
-    const hasNightLine = lines.some((l: any) => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
-    const baseLines = lines.filter((l: any) => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
-    const nightLine = lines.find((l: any) => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
-    const baseTotal = baseLines.reduce((acc: number, l: any) => acc + (l.total_price || 0), 0);
-
-    const linesHtml = lines.map((line: any) => {
-      const isNightL = line.prestation_name.startsWith('Majoration Horaires de Nuit');
-      const cleanName = line.prestation_name.replace(/ \[MAJ\. NUIT.*?\]/g, '');
-      return `<tr style="border-bottom:1px solid #f1f5f9;${isNightL ? 'background:#fffbeb;' : ''}">
-        <td style="padding:10px 8px 10px 0;font-weight:${isNightL ? 'bold' : '600'};color:${isNightL ? '#92400e' : '#1e293b'};">${isNightL ? '🌙 ' : ''}${cleanName}</td>
-        <td style="padding:10px 6px;text-align:center;color:#64748b;">${line.quantity}</td>
-        <td style="padding:10px 6px;text-align:right;color:#64748b;font-family:monospace;">${(line.unit_price || 0).toFixed(2)} €</td>
-        <td style="padding:10px 0 10px 8px;text-align:right;font-weight:bold;color:${isNightL ? '#92400e' : '#1e293b'};font-family:monospace;">${(line.total_price || 0).toFixed(2)} €</td>
-      </tr>`;
-    }).join('');
-
-    const totalsHtml = isB2B
-      ? `<div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Total Global HT :</span><span>${totalHT.toFixed(2)} €</span></div>
-         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>TVA non applicable :</span><span>0.00 €</span></div>
-         <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:900;color:#4f46e5;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer :</span><span>${totalHT.toFixed(2)} €</span></div>`
-      : `${hasNightLine ? `
-         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Sous-total prestations :</span><span>${baseTotal.toFixed(2)} €</span></div>
-         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:bold;color:#b45309;background:#fef3c7;padding:5px 8px;border-radius:6px;margin:3px 0;"><span>🌙 Majoration nuit :</span><span>+${(nightLine?.total_price || 0).toFixed(2)} €</span></div>` : ''}
-         <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;padding:3px 0;"><span>Part de TVA (20%) incluse :</span><span>${tvaAmt.toFixed(2)} €</span></div>
-         <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:900;color:#0284c7;padding:8px 0;border-top:2px solid #e2e8f0;margin-top:4px;"><span>Total Net à payer (TTC) :</span><span>${totalTTC.toFixed(2)} €</span></div>`;
-
-    const logoHtml = companyConfig?.logo_url
-      ? `<img src="${companyConfig.logo_url}" style="height:52px;object-fit:contain;border-radius:8px;" />`
-      : `<div style="background:linear-gradient(135deg,#38bdf8,#3b82f6);padding:10px 14px;border-radius:10px;color:white;font-weight:900;font-size:20px;">✦</div>`;
-
-    const docHtml = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8"/>
-<title>${docTypeLabel} #${doc.number} - ${companyName}</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:white;color:#1e293b;padding:28px;font-size:12px;}
-table{width:100%;border-collapse:collapse;}
-th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:800;padding:7px 0;border-bottom:1px solid #e2e8f0;}
-th:not(:first-child){text-align:right;}
-@media print{body{padding:14px;}}
-</style>
-</head>
-<body>
-<div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:18px;border-bottom:2px solid #f1f5f9;margin-bottom:22px;">
-  <div style="display:flex;align-items:center;gap:12px;">
-    ${logoHtml}
-    <div>
-      <div style="font-size:17px;font-weight:900;color:#1e293b;">${companyName}</div>
-      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Nettoyage haut de gamme de textiles d'ameublement</div>
-      <div style="font-size:10px;color:#64748b;font-family:monospace;">${companyConfig?.telephone || ''}</div>
-    </div>
-  </div>
-  <div style="text-align:right;">
-    <div style="background:${docBg};color:${docColor};font-size:10px;font-weight:900;padding:4px 12px;border-radius:20px;text-transform:uppercase;display:inline-block;">${docTypeLabel} #${doc.number}</div>
-    <div style="font-size:20px;font-weight:900;color:#1e293b;margin-top:5px;">${totalTTC.toFixed(2)} €</div>
-  </div>
-</div>
-
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;background:#f8fafc;padding:14px;border-radius:10px;">
-  <div>
-    <div style="font-size:8px;font-weight:800;text-transform:uppercase;color:#94a3b8;margin-bottom:5px;">Émetteur / Prestataire</div>
-    <div style="font-weight:700;color:#1e293b;">${companyName}</div>
-    <div style="color:#64748b;margin-top:2px;">${companyConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</div>
-    <div style="color:#64748b;">${companyConfig?.telephone || ''}</div>
-  </div>
-  <div>
-    <div style="font-size:8px;font-weight:800;text-transform:uppercase;color:#94a3b8;margin-bottom:5px;">Destinataire (Client)</div>
-    <div style="font-weight:700;color:#1e293b;">${(client.last_name || '').toUpperCase()} ${client.first_name || ''}</div>
-    <div style="color:#64748b;margin-top:2px;">${client.email || ''}</div>
-    <div style="color:#64748b;">${client.phone || ''}</div>
-  </div>
-</div>
-
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #f1f5f9;">
-  <div><div style="font-size:8px;color:#94a3b8;font-weight:800;text-transform:uppercase;">Date d'émission</div><div style="font-weight:700;margin-top:2px;">${doc.date}</div></div>
-  <div><div style="font-size:8px;color:#94a3b8;font-weight:800;text-transform:uppercase;">Date d'échéance</div><div style="font-weight:700;margin-top:2px;">${doc.due_date}</div></div>
-  <div><div style="font-size:8px;color:#94a3b8;font-weight:800;text-transform:uppercase;">Statut</div><div style="font-weight:700;color:#0284c7;margin-top:2px;">${doc.status}</div></div>
-</div>
-
-<table style="margin-bottom:18px;">
-  <thead><tr>
-    <th>Désignation de la prestation</th>
-    <th style="text-align:center;">Qté</th>
-    <th style="text-align:right;">${isB2B ? 'Prix Unit. HT' : 'Prix Unit. TTC'}</th>
-    <th style="text-align:right;">${isB2B ? 'Total HT' : 'Total TTC'}</th>
-  </tr></thead>
-  <tbody>${linesHtml}</tbody>
-</table>
-
-<div style="display:flex;flex-direction:column;align-items:flex-end;">${totalsHtml}</div>
-
-${doc.notes ? `<div style="background:#f8fafc;padding:12px;border-radius:8px;border:1px solid #e2e8f0;margin-top:18px;font-size:11px;color:#64748b;"><div style="font-size:8px;font-weight:800;text-transform:uppercase;color:#94a3b8;margin-bottom:3px;">Notes & conditions</div>${doc.notes}</div>` : ''}
-
-<div style="margin-top:28px;padding-top:14px;border-top:1px dashed #e2e8f0;text-align:center;font-size:8px;color:#94a3b8;">
-  <div style="font-weight:700;color:#475569;margin-bottom:3px;">${companyName} — ${companyConfig?.forme_juridique || 'SARL'} au Capital de ${companyConfig?.capital_social || '10 000 €'}</div>
-  <div>Siège Social : ${companyConfig?.adresse_siege || '42 Avenue de la Propreté, 75008 Paris'}</div>
-  <div style="font-family:monospace;margin-top:2px;">SIRET : ${companyConfig?.siret || '123 456 789 00021'} | Code APE : ${companyConfig?.code_ape || '8121Z'} | TVA : ${companyConfig?.tva_intracommunautaire || 'FR 12 123456789'}</div>
-  <div style="margin-top:5px;font-size:7px;color:#cbd5e1;">Prestations d'injection-extraction et de détachage thermique. ${isB2B ? 'TVA non applicable en vertu de l\'article 293B du CGI.' : ''}</div>
-</div>
-</body>
-</html>`;
-
-    // ✅ Encodage base64 UTF-8 compatible (Cloudflare Workers)
-    const encoder = new TextEncoder();
-    const docBytes = encoder.encode(docHtml);
-    const base64Chunks: string[] = [];
-    const chunkSize = 8192;
-    for (let i = 0; i < docBytes.length; i += chunkSize) {
-      base64Chunks.push(String.fromCharCode(...docBytes.slice(i, i + chunkSize)));
+    let docBase64 = '';
+    try {
+      const pdfBytes = await generateInvoicePDF(doc, client, lines, companyConfig);
+      const base64Chunks: string[] = [];
+      const chunkSize = 8192;
+      for (let i = 0; i < pdfBytes.length; i += chunkSize) {
+        base64Chunks.push(String.fromCharCode(...pdfBytes.slice(i, i + chunkSize)));
+      }
+      docBase64 = btoa(base64Chunks.join(''));
+    } catch (pdfErr: any) {
+      console.error('[PDF Generation Error]:', pdfErr);
+      const encoder = new TextEncoder();
+      const fallbackBytes = encoder.encode(`Erreur generation PDF: ${pdfErr.message}`);
+      docBase64 = btoa(String.fromCharCode(...fallbackBytes));
     }
-    const docBase64 = btoa(base64Chunks.join(''));
     const attachmentFilename = `${docTypeLabel}-${doc.number || doc.id}.pdf`;
 
     // 6. Email HTML body (corps du message)

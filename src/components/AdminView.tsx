@@ -1840,6 +1840,10 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     .reduce((val, curr) => val + curr.total_amount, 0);
   const activeQuotesCount = documents.filter(d => d.type === 'devis').length;
   const acceptedQuotesCount = documents.filter(d => d.type === 'devis' && d.status === 'Signé/Accepté').length;
+  const pendingAssignAppts = appointments.filter(appt => 
+    appt.status === 'Planifié' && 
+    (!appt.assigned_employee_ids || appt.assigned_employee_ids.length === 0)
+  );
 
   const renderSingleDocumentPreview = (doc: DevisFacture, onClosePreview: () => void) => {
     return (
@@ -2701,7 +2705,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
               </div>
 
               {/* CRM alerts / pending tasks */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* Left: Pending Actions based on unsigned items */}
                 <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-4">
@@ -2738,7 +2742,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                   </div>
                 </div>
 
-                {/* Right: Unscheduled signed layouts */}
+                {/* Center: Unscheduled signed layouts */}
                 <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-4">
                   <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                     <ClipboardCheck className="w-4 h-4 text-emerald-500" />
@@ -2773,6 +2777,73 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                             >
                               Créer Chantier
                             </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Unassigned Appointments */}
+                <div className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm space-y-4">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-amber-500" />
+                    <span>Chantiers en attente d'assignation ({pendingAssignAppts.length})</span>
+                  </h3>
+
+                  <div className="space-y-2.5">
+                    {pendingAssignAppts.length === 0 ? (
+                      <div className="py-6 text-center text-xs text-slate-400">
+                        Tous les chantiers ont un salarié assigné !
+                      </div>
+                    ) : (
+                      pendingAssignAppts.map(appt => {
+                        const df = documents.find(d => d.id === appt.devis_facture_id);
+                        const cl = df ? clients.find(c => c.id === df.client_id) : null;
+                        return (
+                          <div key={appt.id} className="p-3 bg-amber-50/40 rounded-xl border border-amber-100 flex flex-col space-y-2">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-xs font-bold text-slate-900">{appt.title}</p>
+                                <p className="text-[10px] text-slate-500">
+                                  Le {new Date(appt.date).toLocaleDateString('fr-FR')} à {appt.start_time} (~{Math.round(appt.duration_minutes/60)}h)
+                                </p>
+                                {cl && (
+                                  <p className="text-[9px] font-bold text-sky-600 mt-0.5">👤 Client : {cl.first_name} {cl.last_name}</p>
+                                )}
+                              </div>
+                              <span className="bg-amber-100 text-amber-800 text-[8px] font-black uppercase px-2 py-0.5 rounded-full shrink-0">
+                                A assigner
+                              </span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              <select
+                                className="bg-white border border-slate-200 text-[10px] font-bold px-2.5 py-1.5 rounded-xl outline-none focus:ring-1 focus:ring-sky-500 w-full"
+                                defaultValue=""
+                                onChange={async (e) => {
+                                  const empId = e.target.value;
+                                  if (!empId) return;
+                                  try {
+                                    await apiService.saveAppointment({
+                                      ...appt,
+                                      assigned_employee_ids: [empId]
+                                    });
+                                    onToast("Salarié assigné avec succès ! L'employé a été notifié.", "success");
+                                    loadAllDbData();
+                                  } catch (err: any) {
+                                    onToast(err.message || "Erreur lors de l'assignation", "error");
+                                  }
+                                }}
+                              >
+                                <option value="" disabled>Assigner un technicien...</option>
+                                {employees.map(em => (
+                                  <option key={em.id} value={em.id}>
+                                    {em.first_name} {em.last_name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         );
                       })
