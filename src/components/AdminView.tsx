@@ -170,6 +170,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     notes: '',
   });
   const [newDocLines, setNewDocLines] = useState<{ prestation_id: string; quantity: number; unit_price: number; custom_name?: string }[]>([]);
+  const [newDocIsNight, setNewDocIsNight] = useState(false);
 
   // B2B & CRM Multi-adresses State
   const [editClientModal, setEditClientModal] = useState(false);
@@ -1374,17 +1375,47 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
   };
 
   // Document lines management during builder
+  const recalculateNewDocNightSurcharge = (lines: typeof newDocLines, isNight: boolean) => {
+    const baseLines = lines.filter(l => l.prestation_id !== 'night_surcharge' && !l.custom_name?.startsWith('Majoration Horaires de Nuit'));
+    
+    if (!isNight) {
+      return baseLines;
+    }
+    
+    const baseSum = baseLines.reduce((acc, l) => acc + Number(l.quantity) * Number(l.unit_price), 0);
+    const surchargeAmount = Number((baseSum * (surchargePct / 100)).toFixed(2));
+    
+    const nightLine = {
+      prestation_id: 'night_surcharge',
+      custom_name: `Majoration Horaires de Nuit (${surchargePct}%)`,
+      quantity: 1,
+      unit_price: surchargeAmount
+    };
+    
+    return [...baseLines, nightLine];
+  };
+
+  const handleToggleNewDocNightShift = (isNight: boolean) => {
+    setNewDocIsNight(isNight);
+    const updated = recalculateNewDocNightSurcharge(newDocLines, isNight);
+    setNewDocLines(updated);
+  };
+
   const addLineToDocBuilder = () => {
     if (prestations.length > 0) {
-      setNewDocLines([
+      let updated = [
         ...newDocLines,
         { prestation_id: prestations[0].id, quantity: 1, unit_price: prestations[0].base_price }
-      ]);
+      ];
+      if (newDocIsNight) {
+        updated = recalculateNewDocNightSurcharge(updated, true);
+      }
+      setNewDocLines(updated);
     }
   };
 
   const updateLineValue = (index: number, field: string, val: any) => {
-    const lines = [...newDocLines];
+    let lines = [...newDocLines];
     if (field === 'prestation_id') {
       lines[index].prestation_id = val;
       if (val === 'custom') {
@@ -1397,11 +1428,19 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
     } else {
       (lines[index] as any)[field] = val;
     }
+
+    if (newDocIsNight) {
+      lines = recalculateNewDocNightSurcharge(lines, true);
+    }
     setNewDocLines(lines);
   };
 
   const removeLineFromBuilder = (index: number) => {
-    setNewDocLines(newDocLines.filter((_, i) => i !== index));
+    let updated = newDocLines.filter((_, i) => i !== index);
+    if (newDocIsNight) {
+      updated = recalculateNewDocNightSurcharge(updated, true);
+    }
+    setNewDocLines(updated);
   };
 
   // Save Devis/Facture
@@ -1449,7 +1488,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
         const unitPriceHT = isB2B ? unitPriceTTC / 1.20 : unitPriceTTC;
         const qty = Number(line.quantity);
         return {
-          prestation_name: line.prestation_id === 'custom' ? (line.custom_name || 'Prestation personnalisée') : (p ? p.name : 'Service Nettoyage'),
+          prestation_name: line.prestation_id === 'custom' || line.prestation_id === 'night_surcharge' ? (line.custom_name || 'Prestation') : (p ? p.name : 'Service Nettoyage'),
           quantity: qty,
           unit_price: isB2B ? unitPriceHT : unitPriceTTC, // stocke HT pour B2B
           total_price: qty * (isB2B ? unitPriceHT : unitPriceTTC)
@@ -1483,6 +1522,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       onToast("Document enregistré !", "success");
       setNewDocModal(false);
       setNewDocLines([]);
+      setNewDocIsNight(false);
       setDocInterventionAddress('');
       setNewDocForm({
         client_id: '',
@@ -1912,12 +1952,31 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
               const localHT = isB2BDoc ? sumOfLines : (sumOfLines / 1.20);
               const localTVA = isB2BDoc ? 0 : (localTTC - localHT);
               const isBrouillon = doc.status === 'Brouillon';
+              const hasNightSurcharge = viewingLines.some(l => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
 
               const updateLocalLineQty = async (index: number, newQty: number) => {
-                const updatedLines = [...viewingLines];
+                let updatedLines = [...viewingLines];
                 const line = updatedLines[index];
                 line.quantity = Math.max(1, newQty);
                 line.total_price = line.quantity * line.unit_price;
+
+                const hasNight = updatedLines.some(l => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                if (hasNight) {
+                  const baseLines = updatedLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                  const baseSum = baseLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                  const surchargeAmount = Number((baseSum * (surchargePct / 100)).toFixed(2));
+                  updatedLines = updatedLines.map(l => {
+                    if (l.prestation_name.startsWith('Majoration Horaires de Nuit')) {
+                      return {
+                        ...l,
+                        unit_price: surchargeAmount,
+                        total_price: surchargeAmount
+                      };
+                    }
+                    return l;
+                  });
+                }
+
                 setViewingLines(updatedLines);
 
                 const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
@@ -1943,7 +2002,25 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                   onToast("Un document doit posséder au moins une ligne de prestation.", "info");
                   return;
                 }
-                const updatedLines = viewingLines.filter((_, idx) => idx !== index);
+                let updatedLines = viewingLines.filter((_, idx) => idx !== index);
+
+                const hasNight = updatedLines.some(l => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                if (hasNight) {
+                  const baseLines = updatedLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                  const baseSum = baseLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                  const surchargeAmount = Number((baseSum * (surchargePct / 100)).toFixed(2));
+                  updatedLines = updatedLines.map(l => {
+                    if (l.prestation_name.startsWith('Majoration Horaires de Nuit')) {
+                      return {
+                        ...l,
+                        unit_price: surchargeAmount,
+                        total_price: surchargeAmount
+                      };
+                    }
+                    return l;
+                  });
+                }
+
                 setViewingLines(updatedLines);
 
                 const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
@@ -1979,7 +2056,25 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                   total_price: priceVal
                 } as any;
 
-                const updatedLines = [...viewingLines, newLine];
+                let updatedLines = [...viewingLines, newLine];
+
+                const hasNight = updatedLines.some(l => l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                if (hasNight) {
+                  const baseLines = updatedLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                  const baseSum = baseLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                  const surchargeAmount = Number((baseSum * (surchargePct / 100)).toFixed(2));
+                  updatedLines = updatedLines.map(l => {
+                    if (l.prestation_name.startsWith('Majoration Horaires de Nuit')) {
+                      return {
+                        ...l,
+                        unit_price: surchargeAmount,
+                        total_price: surchargeAmount
+                      };
+                    }
+                    return l;
+                  });
+                }
+
                 setViewingLines(updatedLines);
 
                 const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
@@ -2049,23 +2144,105 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
                   </table>
 
                   {isBrouillon && (
-                    <div className="bg-sky-50/50 p-4 rounded-2xl border border-sky-100/60 mt-4 flex flex-col sm:flex-row items-center gap-3">
-                      <span className="text-[10px] font-extrabold text-sky-700 uppercase shrink-0">Ajouter au brouillon :</span>
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            addPrestationToBrouillon(e.target.value);
-                            e.target.value = '';
-                          }
-                        }}
-                        className="flex-1 bg-white border border-sky-100 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-sky-500"
-                        defaultValue=""
-                      >
-                        <option value="" disabled>Sélectionner une prestation du catalogue...</option>
-                        {prestations.map(p => (
-                          <option key={p.id} value={p.id}>{p.name} ({p.base_price.toFixed(2)} €)</option>
-                        ))}
-                      </select>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 mb-2">
+                      {/* Catalog Select */}
+                      <div className="bg-sky-50/50 p-4 rounded-2xl border border-sky-100/60 flex flex-col justify-center gap-2">
+                        <span className="text-[10px] font-extrabold text-sky-700 uppercase">Ajouter au brouillon :</span>
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              addPrestationToBrouillon(e.target.value);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="w-full bg-white border border-sky-100 rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-sky-500"
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Sélectionner une prestation du catalogue...</option>
+                          {prestations.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} ({p.base_price.toFixed(2)} €)</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Night Surcharge Toggle */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 flex flex-col justify-center gap-2">
+                        <span className="text-[10px] font-extrabold text-slate-700 uppercase">Tarification Horaire :</span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const baseLines = viewingLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                              const calculatedTTC = baseLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                              const calculatedHT = isB2BDoc ? calculatedTTC : (calculatedTTC / 1.20);
+                              const updatedDoc = {
+                                ...doc,
+                                total_amount: calculatedTTC,
+                                total_ht: calculatedHT,
+                                total_ttc: calculatedTTC
+                              };
+                              setViewingLines(baseLines);
+                              setViewingDoc(updatedDoc);
+                              try {
+                                await apiService.saveDevisFacture(updatedDoc, baseLines);
+                                const freshDocs = await apiService.getDevisFactures();
+                                setDocuments(freshDocs);
+                                onToast("Tarif Journée appliqué !", "success");
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                              !hasNightSurcharge
+                                ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            ☀️ Journée
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const baseLines = viewingLines.filter(l => !l.prestation_name.startsWith('Majoration Horaires de Nuit'));
+                              const baseSum = baseLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                              const surchargeAmount = Number((baseSum * (surchargePct / 100)).toFixed(2));
+                              const newLine = {
+                                devis_facture_id: doc.id,
+                                prestation_name: `Majoration Horaires de Nuit (${surchargePct}%)`,
+                                quantity: 1,
+                                unit_price: surchargeAmount,
+                                total_price: surchargeAmount
+                              } as any;
+                              const updatedLines = [...baseLines, newLine];
+                              const calculatedTTC = updatedLines.reduce((acc, l) => acc + (l.quantity * l.unit_price), 0);
+                              const calculatedHT = isB2BDoc ? calculatedTTC : (calculatedTTC / 1.20);
+                              const updatedDoc = {
+                                ...doc,
+                                total_amount: calculatedTTC,
+                                total_ht: calculatedHT,
+                                total_ttc: calculatedTTC
+                              };
+                              setViewingLines(updatedLines);
+                              setViewingDoc(updatedDoc);
+                              try {
+                                await apiService.saveDevisFacture(updatedDoc, updatedLines);
+                                const freshDocs = await apiService.getDevisFactures();
+                                setDocuments(freshDocs);
+                                onToast(`Tarif Nuit (+${surchargePct}%) appliqué !`, "success");
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                              hasNightSurcharge
+                                ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            🌙 Nuit
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -6344,6 +6521,40 @@ export default {
                     ))
                   )}
                 </div>
+              </div>
+
+              {/* Tarification Horaire (Journée / Nuit) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 flex flex-col gap-2">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block font-sans">TARIFICATION HORAIRE</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleNewDocNightShift(false)}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                      !newDocIsNight
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    ☀️ Journée
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleNewDocNightShift(true)}
+                    className={`flex-1 py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                      newDocIsNight
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-md shadow-sky-500/10'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    🌙 Nuit
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 italic mt-1 leading-normal">
+                  {!newDocIsNight
+                    ? "(Horaires applicables : 06:00 - 22:00)"
+                    : `(⚠️ Soumis à majoration de nuit : 22:00 - 06:00)`}
+                </p>
               </div>
 
               {/* ── Bloc totalisation dynamique TVA ── */}
