@@ -1611,20 +1611,16 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
       // TRIGGERS AUTOmated email (Resend Simulation) if account is active (only for existing employees, creation is handled by backend)
       if (newEmpForm.compte_actif && newEmpForm.id) {
+        const loginLink = `${window.location.protocol}//${window.location.host}/login`;
         const replacementParams = {
-          NOM_EMPLOYE: `${newEmpForm.first_name} ${newEmpForm.last_name}`,
+          PRENOM_EMPLOYE: newEmpForm.first_name,
+          NOM_EMPLOYE: newEmpForm.last_name,
           IDENT_CONNEXION: u_name || buildUsername(newEmpForm.first_name, newEmpForm.last_name),
           PASS_CONNEXION: p_hash || (newEmpForm.last_name.trim().toLowerCase().replace(/\s+/g, '').normalize("NFD").replace(/[\u0300-\u036f]/g, "") + '2025'),
-          LIEN_CONNEXION: `${window.location.protocol}//${window.location.host}/login`,
-          PRENOM_CLIENT: 'Client',
-          NOM_CLIENT: 'Test',
-          DATE_RDV: 'À définir',
-          HEURE_RDV: 'À définir',
-          DUREE_ESTIMEE: '120',
-          LIEN_AVIS: '#'
+          LIEN_CONNEXION: `<a href="${loginLink}" style="display: inline-block; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #ffffff; padding: 12px 24px; border-radius: 10px; font-weight: 700; text-decoration: none; font-size: 14px; margin: 16px 0;">📱 Accéder à mon Espace Employé</a>`
         };
 
-        await apiService.sendAutomatedEmail('employee_notification', replacementParams, newEmpForm.email);
+        await apiService.sendAutomatedEmail('employee_welcome', replacementParams, newEmpForm.email);
         onToast(`E-mail de bienvenue envoyé à ${newEmpForm.email} depuis notifications@l-iamani.com !`, "success");
       }
 

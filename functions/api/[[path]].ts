@@ -1146,6 +1146,20 @@ app.post('/appointments', async (c) => {
         const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(appt.document_id).first<any>();
         const client = doc ? await c.env.DB.prepare('SELECT * FROM clients WHERE id = ?').bind(doc.client_id).first<any>() : null;
         
+        let adresseClient = '';
+        if (appt.notes && appt.notes.startsWith("Adresse d'intervention : ")) {
+          const parts = appt.notes.split('\n');
+          adresseClient = parts[0].replace("Adresse d'intervention : ", '').trim();
+        } else if (client) {
+          const addr = await c.env.DB.prepare('SELECT adresse_complete FROM client_adresses WHERE client_id = ? LIMIT 1').bind(client.id).first<any>();
+          adresseClient = addr?.adresse_complete || '';
+        }
+
+        const lines = appt.document_id ? await c.env.DB.prepare('SELECT prestation_name, quantity FROM lignes_documents WHERE document_id = ?').bind(appt.document_id).all<any>() : null;
+        const prestationsDetail = lines?.results && lines.results.length > 0
+          ? lines.results.map((l: any) => `• ${l.prestation_name} (x${l.quantity})`).join('\n')
+          : 'Aucune prestation spécifiée';
+
         const emailConfig = await c.env.DB.prepare('SELECT * FROM configurations_emails WHERE flux_type = "employee_notification"').first<any>();
         const companyConfig = await c.env.DB.prepare('SELECT nom_entreprise FROM entreprise_config WHERE id = "default"').first<any>();
         const companyName = companyConfig?.nom_entreprise || 'Shampooine Le';
@@ -1153,24 +1167,27 @@ app.post('/appointments', async (c) => {
         for (const empId of newlyAssigned) {
           const emp = await c.env.DB.prepare('SELECT * FROM employes WHERE id = ?').bind(empId).first<any>();
           if (emp && emp.email) {
-            let subject = emailConfig ? emailConfig.sujet : `Nouvelle intervention assignee - ${companyName}`;
+            let subject = emailConfig ? emailConfig.sujet : `Nouvelle intervention assignée - ${companyName}`;
             let bodyText = emailConfig 
               ? emailConfig.corps_message 
-              : 'Bonjour {NOM_EMPLOYE},\n\nUne nouvelle intervention vous a ete assignee le {DATE_RDV} a {HEURE_RDV}.\nClient: {PRENOM_CLIENT} {NOM_CLIENT}.\n\nBonne intervention,\n{NOM_ENTREPRISE}';
+              : 'Bonjour {PRENOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nClient : {PRENOM_CLIENT} {NOM_CLIENT}.\nAdresse : {ADRESSE_CLIENT}\nPrestations :\n{PRESTATIONS_DETAIL}\n\nBonne intervention,\n{NOM_ENTREPRISE}';
               
             const replacements: Record<string, string> = {
-              NOM_EMPLOYE: `${emp.first_name} ${emp.last_name}`,
-              DATE_RDV: appt.date,
-              HEURE_RDV: appt.start_time,
+              PRENOM_EMPLOYE: emp.first_name || '',
+              NOM_EMPLOYE: emp.last_name || '',
+              DATE_RDV: appt.date || '',
+              HEURE_RDV: appt.start_time || '',
               PRENOM_CLIENT: client ? client.first_name : '',
               NOM_CLIENT: client ? client.last_name : '',
+              ADRESSE_CLIENT: adresseClient,
+              PRESTATIONS_DETAIL: prestationsDetail,
               NOM_ENTREPRISE: companyName
             };
             
             Object.entries(replacements).forEach(([key, val]) => {
               const tag = `{${key}}`;
-              subject = subject.replace(new RegExp(tag, 'g'), val);
-              bodyText = bodyText.replace(new RegExp(tag, 'g'), val);
+              subject = subject.replace(new RegExp(tag, 'g'), String(val));
+              bodyText = bodyText.replace(new RegExp(tag, 'g'), String(val));
             });
             
             const resendApiKey = c.env.RESEND_API_KEY;
