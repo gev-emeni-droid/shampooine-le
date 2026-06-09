@@ -1675,7 +1675,7 @@ app.get('/emails/config', async (c) => {
           id: 'email_conf_7',
           flux_type: 'employee_welcome',
           sujet: 'Bienvenue dans l\'équipe de SHAMPOOINE LE ! Vos accès de connexion',
-          corps_message: 'Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d\'accès pour consulter votre planning d'intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL\'équipe Shampooine Le'
+          corps_message: 'Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d\'accès pour consulter votre planning d\'intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL\'équipe Shampooine Le'
         }
       ];
 
