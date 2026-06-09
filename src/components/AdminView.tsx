@@ -57,6 +57,75 @@ import {
 } from 'lucide-react';
 import { EntrepriseConfig } from '../types';
 
+const DEFAULT_TEMPLATES = [
+  {
+    id: 'email_conf_1',
+    flux_type: 'devis_sending',
+    sujet_template: 'Votre Devis - Shampooine Le',
+    corps_template: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVoici votre devis {NUMERO_DOCUMENT}.\nVous pouvez le signer en ligne ici : {LIEN_SIGNATURE}\n\nCordialement,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_2',
+    flux_type: 'appointment_confirmation',
+    sujet_template: 'Confirmation de votre rendez-vous - Shampooine Le',
+    corps_template: 'Bonjour {PRENOM_CLIENT},\n\nVotre rendez-vous est confirmé pour le {DATE_RDV} à {HEURE_RDV}.\nDurée estimée : {DUREE_ESTIMEE} minutes.\n\nCordialement,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_3',
+    flux_type: 'employee_notification',
+    sujet_template: 'Nouvelle intervention assignée - Shampooine Le',
+    corps_template: 'Bonjour {PRENOM_EMPLOYE},\n\nUne nouvelle intervention vous a été assignée le {DATE_RDV} à {HEURE_RDV}.\nAdresse : {ADRESSE_CLIENT}\nPrestations : {PRESTATIONS_DETAIL}\n\nBonne intervention,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_4',
+    flux_type: 'growth_feedback_request',
+    sujet_template: 'Votre avis nous intéresse ! Merci pour votre confiance - Shampooine Le',
+    corps_template: 'Bonjour {PRENOM_CLIENT},\n\nVotre prestation de nettoyage de canapé/tapis s\'est terminée avec succès !\nNous espérons que le résultat répond à vos attentes.\n\nMerci de bien vouloir prendre 1 minute pour évaluer notre travail et nous laisser votre avis :\n{LIEN_AVIS}\n\nCordialement,\nL\'équipe Shampooine Le'
+  },
+  {
+    id: 'email_conf_5',
+    flux_type: 'facture_sending',
+    sujet_template: 'Votre Facture - Shampooine Le',
+    corps_template: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nVotre prestation est terminée. Voici votre facture.\nMontant total : {MONTANT_TOTAL} €\nMode de paiement : {MODE_PAIEMENT}\nReste à payer : {RESTE_A_PAYER} €\n\nCordialement,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_6',
+    flux_type: 'booking_invitation',
+    sujet_template: 'Votre devis est signé ! Choisissez votre créneau d\'intervention - Shampooine Le',
+    corps_template: 'Bonjour {PRENOM_CLIENT} {NOM_CLIENT},\n\nMerci pour votre signature ! Votre devis {NUMERO_DOCUMENT} est maintenant validé.\nNous vous invitons à choisir la date et l\'heure de votre intervention de nettoyage (estimée à {DUREE_ESTIMEE}) via le lien ci-dessous :\n{LIEN_CALENDRIER}\n\nÀ très bientôt,\nL\'équipe Shampooine Le'
+  },
+  {
+    id: 'email_conf_7',
+    flux_type: 'employee_welcome',
+    sujet_template: 'Bienvenue dans l\'équipe de SHAMPOOINE LE ! Vos accès de connexion',
+    corps_template: 'Bonjour {PRENOM_EMPLOYE} {NOM_EMPLOYE},\n\nNous sommes ravis de vous compter parmi nous ! Votre compte d\'accès pour consulter votre planning d\'intervention et gérer vos chantiers a été créé avec succès.\n\nVos identifiants :\n• Identifiant : {IDENT_CONNEXION}\n• Mot de passe temporaire : {PASS_CONNEXION}\n\nVous pouvez vous connecter via ce bouton :\n{LIEN_CONNEXION}\n\nPour des raisons de sécurité, nous vous invitons à modifier votre mot de passe dès votre première connexion.\n\nCordialement,\nL\'équipe Shampooine Le'
+  },
+  {
+    id: 'email_conf_8',
+    flux_type: 'new_devis_request',
+    sujet_template: '🔔 Nouvelle demande de devis reçue sur Shampooine Le !',
+    corps_template: 'Bonjour,\n\nUne nouvelle demande de devis a été soumise par un client sur le site public.\n\nInformations du Client :\n• Nom complet : {PRENOM_CLIENT} {NOM_CLIENT}\n• Téléphone : {TELEPHONE_CLIENT}\n• Estimation initiale : {TOTAL_ESTIME} €\n\nMerci de vous connecter au Dashboard Admin pour traiter cette demande.\n\nCordialement,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_9',
+    flux_type: 'devis_signed_online',
+    sujet_template: '📝 Devis signé en ligne ! - Shampooine Le',
+    corps_template: 'Bonjour,\n\nLe devis numéro {NUMERO_DOCUMENT} a été signé en ligne par le client.\n\nInformations du Client :\n• Nom complet : {NOM_CLIENT}\n• Montant total : {TOTAL_DOCUMENT} €\n\nVous pouvez visualiser le document signé et le planifier depuis le Dashboard Admin :\n{LIEN_ADMIN_DOCUMENT}\n\nCordialement,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_10',
+    flux_type: 'appointment_validated_client',
+    sujet_template: '📅 Rendez-vous réservé en ligne par un client - Shampooine Le',
+    corps_template: 'Bonjour,\n\nLe client {NOM_CLIENT} a choisi son créneau et validé son intervention.\n\nDétails du Rendez-vous :\n• Date : {DATE_RDV}\n• Heure : {HEURE_RDV}\n• Durée estimée : {DUREE_ESTIMEE} minutes\n\nConsultez le planning d\'agenda de la direction pour assigner un ou plusieurs salariés à ce chantier.\n\nCordialement,\nShampooine Le'
+  },
+  {
+    id: 'email_conf_11',
+    flux_type: 'prestation_completed_employee',
+    sujet_template: '✅ Chantier clôturé et terminé par le technicien ! - Shampooine Le',
+    corps_template: 'Bonjour,\n\nUne prestation d\'intervention vient d\'être clôturée sur le terrain par le technicien.\n\nDétails de l\'intervention :\n• Salarié : {NOM_EMPLOYE}\n• Client : {NOM_CLIENT}\n• Montant encaissé/constaté : {MONTANT_CONSTATE} €\n• Mode de paiement choisi : {MODE_PAIEMENT_CHOISI}\n\nMerci de valider et archiver le document de facturation correspondant.\n\nCordialement,\nShampooine Le'
+  }
+];
+
 interface AdminViewProps {
   onSwitchToPublic: () => void;
   onToast: (msg: string, type: 'success' | 'info') => void;
@@ -374,7 +443,7 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
 
   // Employee Edit States
   const [newEmpModal, setNewEmpModal] = useState(false);
-  const [emailSubTab, setEmailSubTab] = useState<'clients' | 'employees' | 'company'>('clients');
+  const [emailSubTab, setEmailSubTab] = useState<'clients' | 'employees' | 'enterprise'>('clients');
   const [newEmpForm, setNewEmpForm] = useState({ 
     id: '', 
     first_name: '', 
@@ -618,7 +687,16 @@ export default function AdminView({ onSwitchToPublic, onToast, onUpdateEntrepris
       setDocuments(dfRes);
       setEmployees(empRes);
       setAppointments(apptRes);
-      setEmailConfigs(mRes);
+      const mergedConfigs = DEFAULT_TEMPLATES.map(def => {
+        const dbConfig = mRes.find((c: any) => c.flux_type === def.flux_type);
+        return {
+          id: dbConfig?.id || def.id,
+          flux_type: def.flux_type,
+          sujet_template: dbConfig?.sujet_template || dbConfig?.sujet || def.sujet_template,
+          corps_template: dbConfig?.corps_template || dbConfig?.corps_message || def.corps_template
+        };
+      });
+      setEmailConfigs(mergedConfigs);
       setClientReviews(rRes);
       setAllAddresses(addrRes || []);
       setEntrepriseHoraires(hoursRes || []);
@@ -4046,12 +4124,12 @@ export default {
                     <button
                       type="button"
                       onClick={() => {
-                        setEmailSubTab('company');
+                        setEmailSubTab('enterprise');
                         const firstComp = emailConfigs.find(c => ['new_devis_request', 'devis_signed_online', 'appointment_validated_client', 'prestation_completed_employee'].includes(c.flux_type));
                         if (firstComp) setEditingConfig(firstComp);
                       }}
                       className={`flex-1 text-center py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        emailSubTab === 'company'
+                        emailSubTab === 'enterprise'
                           ? 'bg-sky-500 text-white shadow-md shadow-sky-500/10'
                           : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
                       }`}
@@ -4067,9 +4145,10 @@ export default {
                           return ['devis_sending', 'booking_invitation', 'appointment_confirmation', 'facture_sending', 'growth_feedback_request'].includes(config.flux_type);
                         } else if (emailSubTab === 'employees') {
                           return ['employee_welcome', 'employee_notification'].includes(config.flux_type);
-                        } else {
+                        } else if (emailSubTab === 'enterprise') {
                           return ['new_devis_request', 'devis_signed_online', 'appointment_validated_client', 'prestation_completed_employee'].includes(config.flux_type);
                         }
+                        return false;
                       })
                       .map((config) => {
                         const isSelected = editingConfig?.id === config.id;
@@ -4232,8 +4311,17 @@ export default {
                                 await apiService.saveEmailConfiguration(editingConfig);
                                 onToast("Modèle sauvegardé avec succès !", "success");
                                 const fresh = await apiService.getEmailConfigurations();
-                                setEmailConfigs(fresh);
-                                const matching = fresh.find(f => f.flux_type === editingConfig.flux_type);
+                                const freshMerged = DEFAULT_TEMPLATES.map(def => {
+                                  const dbConfig = fresh.find((c: any) => c.flux_type === def.flux_type);
+                                  return {
+                                    id: dbConfig?.id || def.id,
+                                    flux_type: def.flux_type,
+                                    sujet_template: dbConfig?.sujet_template || dbConfig?.sujet || def.sujet_template,
+                                    corps_template: dbConfig?.corps_template || dbConfig?.corps_message || def.corps_template
+                                  };
+                                });
+                                setEmailConfigs(freshMerged);
+                                const matching = freshMerged.find(f => f.flux_type === editingConfig.flux_type);
                                 if (matching) {
                                   setEditingConfig(matching);
                                 }
